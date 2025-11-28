@@ -90,7 +90,9 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	// 1. Create Skeleton
 	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating Skeleton..."));
 	FString SkeletonName = InName.ToString() + TEXT("_Skeleton");
-	USkeleton* Skeleton = NewObject<USkeleton>(InParent, FName(*SkeletonName), Flags);
+	FString SkeletonPackageName = FPaths::Combine(FPaths::GetPath(InParent->GetPathName()), SkeletonName);
+	UPackage* SkeletonPackage = CreatePackage(*SkeletonPackageName);
+	USkeleton* Skeleton = NewObject<USkeleton>(SkeletonPackage, FName(*SkeletonName), Flags | RF_Public | RF_Standalone | RF_Transactional);
 	
 	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
 	FReferenceSkeletonModifier Modifier(const_cast<FReferenceSkeleton&>(RefSkeleton), Skeleton);
@@ -103,7 +105,9 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	// 2. Create Skeletal Mesh (Dummy)
 	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating Skeletal Mesh..."));
 	FString MeshName = InName.ToString() + TEXT("_Mesh");
-	USkeletalMesh* SkeletalMesh = NewObject<USkeletalMesh>(InParent, FName(*MeshName), Flags);
+	FString MeshPackageName = FPaths::Combine(FPaths::GetPath(InParent->GetPathName()), MeshName);
+	UPackage* MeshPackage = CreatePackage(*MeshPackageName);
+	USkeletalMesh* SkeletalMesh = NewObject<USkeletalMesh>(MeshPackage, FName(*MeshName), Flags | RF_Public | RF_Standalone | RF_Transactional);
 	SkeletalMesh->SetSkeleton(Skeleton);
 	
 	// Create a dummy triangle to satisfy engine requirements for skeletal meshes
@@ -152,10 +156,19 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	// Save Import Data
 	SkeletalMesh->SaveLODImportedData(0, ImportData);
 	
+	// Finalize Skeleton and Mesh
+	Skeleton->MergeAllBonesToBoneTree(SkeletalMesh);
+	SkeletalMesh->PostEditChange();
+	Skeleton->PostEditChange();
+
+	FAssetRegistryModule::AssetCreated(Skeleton);
+	FAssetRegistryModule::AssetCreated(SkeletalMesh);
+
 	// 3. Create AnimSequence
 	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating AnimSequence..."));
-	UAnimSequence* AnimSequence = NewObject<UAnimSequence>(InParent, InName, Flags);
+	UAnimSequence* AnimSequence = NewObject<UAnimSequence>(InParent, InName, Flags | RF_Public | RF_Standalone | RF_Transactional);
 	AnimSequence->SetSkeleton(Skeleton);
+	AnimSequence->SetPreviewMesh(SkeletalMesh);
 	
 	// Flatten tree in DFS order to match channel data
 	TArray<TSharedPtr<FBVHNode>> FlatNodes;
@@ -275,8 +288,6 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	Controller.CloseBracket();
 	
 	// Notify Asset Registry
-	FAssetRegistryModule::AssetCreated(Skeleton);
-	FAssetRegistryModule::AssetCreated(SkeletalMesh);
 	FAssetRegistryModule::AssetCreated(AnimSequence);
 	
 	return AnimSequence;
