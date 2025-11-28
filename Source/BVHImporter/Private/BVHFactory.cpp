@@ -5,6 +5,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "Rendering/SkeletalMeshLODImporterData.h"
 #include "AssetCompilingManager.h"
+#include "AnimationBlueprintLibrary.h"
+
 #include "Rendering/SkeletalMeshModel.h"
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "ReferenceSkeleton.h"
@@ -403,43 +405,35 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	FNodeCollector::Collect(Data.RootNode, FlatNodes);
 	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Flattened nodes. Count: %d"), FlatNodes.Num());
 	
-	// Assign start indices
+	// Assign start indices and build Node Map
 	int32 CurrentChannelIdx = 0;
+	TMap<FString, TSharedPtr<FBVHNode>> NodeNameMap;
 	for (auto Node : FlatNodes)
 	{
 		Node->ChannelStartIndex = CurrentChannelIdx;
 		CurrentChannelIdx += Node->Channels.Num();
+		NodeNameMap.Add(Node->Name, Node);
 	}
 	
-	IAnimationDataController& Controller = AnimSequence->GetController();
-	Controller.OpenBracket(FText::FromString(TEXT("Import BVH")));
-	
-	AnimSequence->ImportFileFramerate = 1.0 / Data.FrameTime;
-	AnimSequence->ImportResampleFramerate = 1.0 / Data.FrameTime;
-	Controller.SetFrameRate(FFrameRate(FMath::RoundToInt(1.0 / Data.FrameTime), 1));
-	Controller.SetNumberOfFrames(Data.NumFrames);
-	
-	for (auto Node : FlatNodes)
+	// Populate Animation Data using AnimationBlueprintLibrary
+	// This handles the data model initialization and curve creation more robustly
+	for (const auto& Pair : BoneMap)
 	{
-		if (!Node.IsValid())
-		{
-			UE_LOG(LogTemp, Error, TEXT("BVHFactory: Found invalid node in FlatNodes."));
-			continue;
-		}
+		const FString& NodeName = Pair.Key;
+		const FName& BoneName = Pair.Value;
+		
+		if (!NodeNameMap.Contains(NodeName)) continue;
+		const TSharedPtr<FBVHNode>& Node = NodeNameMap[NodeName];
+		
+		if (!Node.IsValid()) continue;
 
-		FName BoneName = BoneMap[Node->Name];
-		if (BoneName == NAME_None)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("BVHFactory: Node %s not found in BoneMap."), *Node->Name);
-			continue;
-		}
+		// Add Transform Curve (Bone Track)
+		UAnimationBlueprintLibrary::AddCurve(AnimSequence, BoneName, ERawCurveTrackTypes::RCT_Transform, false);
 		
-		Controller.AddBoneCurve(BoneName);
-		
-		TArray<FVector> PosKeys;
-		TArray<FQuat> RotKeys;
-		PosKeys.Reserve(Data.NumFrames);
-		RotKeys.Reserve(Data.NumFrames);
+		TArray<float> Times;
+		TArray<FTransform> Transforms;
+		Times.Reserve(Data.NumFrames);
+		Transforms.Reserve(Data.NumFrames);
 		
 		for (int32 Frame = 0; Frame < Data.NumFrames; ++Frame)
 		{
@@ -493,14 +487,12 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 				LocalPos = ChanPos;
 			}
 			
-			PosKeys.Add(ConvertPos(LocalPos));
-			RotKeys.Add(ConvertRot(LocalRot));
+			Times.Add(Frame * Data.FrameTime);
+			Transforms.Add(FTransform(ConvertRot(LocalRot), ConvertPos(LocalPos), FVector::OneVector));
 		}
 		
-		Controller.SetBoneTrackKeys(BoneName, PosKeys, RotKeys, TArray<FVector>());
+		UAnimationBlueprintLibrary::AddTransformationCurveKeys(AnimSequence, BoneName, Times, Transforms);
 	}
-	
-	Controller.CloseBracket();
 	
 	// Notify Asset Registry
 	FAssetRegistryModule::AssetCreated(AnimSequence);

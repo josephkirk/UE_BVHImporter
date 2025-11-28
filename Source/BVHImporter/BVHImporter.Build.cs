@@ -42,7 +42,8 @@ public class BVHImporter : ModuleRules
 				"StaticMeshDescription",
 				"SkeletalMeshDescription",
 				"MeshUtilities",
-				"AssetRegistry"
+				"AssetRegistry",
+				"AnimationBlueprintLibrary"
 			}
 			);
 		

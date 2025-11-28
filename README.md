@@ -1,6 +1,6 @@
 # BVH Importer for UE5
 
-Just a simple plugin I whipped up to get `.bvh` motion capture files into Unreal Engine 5 without the usual headache.
+Just a simple plugin I whipped up to get `.bvh` motion capture files into Unreal Engine 5 for processing mocap dataset. Also to learn how to build custom importers for UE5.
 
 ## What it does
 You drag a BVH file into the content browser, and it spits out:
