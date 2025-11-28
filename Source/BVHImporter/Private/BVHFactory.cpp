@@ -80,8 +80,8 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	FString SkeletonName = InName.ToString() + TEXT("_Skeleton");
 	USkeleton* Skeleton = NewObject<USkeleton>(InParent, FName(*SkeletonName), Flags);
 	
-	FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
-	FReferenceSkeletonModifier Modifier(RefSkeleton, Skeleton);
+	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
+	FReferenceSkeletonModifier Modifier(const_cast<FReferenceSkeleton&>(RefSkeleton), Skeleton);
 	
 	TMap<FString, FName> BoneMap; // BVH Node Name -> UE Bone Name
 	BuildSkeletonHierarchy(Data.RootNode, Modifier, NAME_None, BoneMap);
@@ -92,23 +92,24 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	SkeletalMesh->SetSkeleton(Skeleton);
 	
 	// Create a dummy triangle to satisfy engine requirements for skeletal meshes
-	ImportData.Points.Add(FVector(0, 0, 0));
-	ImportData.Points.Add(FVector(0, 1, 0));
-	ImportData.Points.Add(FVector(0, 0, 1));
+	FSkeletalMeshImportData ImportData;
+	ImportData.Points.Add(FVector3f(0, 0, 0));
+	ImportData.Points.Add(FVector3f(0, 1, 0));
+	ImportData.Points.Add(FVector3f(0, 0, 1));
 	
 	SkeletalMeshImportData::FVertex V0, V1, V2;
 	V0.VertexIndex = 0; V1.VertexIndex = 1; V2.VertexIndex = 2;
 	V0.MatIndex = 0; V1.MatIndex = 0; V2.MatIndex = 0;
-	V0.UVs[0] = FVector2D(0, 0); V1.UVs[0] = FVector2D(1, 0); V2.UVs[0] = FVector2D(0, 1);
+	V0.UVs[0] = FVector2f(0, 0); V1.UVs[0] = FVector2f(1, 0); V2.UVs[0] = FVector2f(0, 1);
 	
 	SkeletalMeshImportData::FTriangle Tri;
 	Tri.WedgeIndex[0] = 0; Tri.WedgeIndex[1] = 1; Tri.WedgeIndex[2] = 2;
 	Tri.MatIndex = 0;
 	Tri.AuxMatIndex = 0;
 	Tri.SmoothingGroups = 0;
-	Tri.TangentZ[0] = FVector(0,0,1); Tri.TangentZ[1] = FVector(0,0,1); Tri.TangentZ[2] = FVector(0,0,1);
-	Tri.TangentX[0] = FVector(1,0,0); Tri.TangentX[1] = FVector(1,0,0); Tri.TangentX[2] = FVector(1,0,0);
-	Tri.TangentY[0] = FVector(0,1,0); Tri.TangentY[1] = FVector(0,1,0); Tri.TangentY[2] = FVector(0,1,0);
+	Tri.TangentZ[0] = FVector3f(0,0,1); Tri.TangentZ[1] = FVector3f(0,0,1); Tri.TangentZ[2] = FVector3f(0,0,1);
+	Tri.TangentX[0] = FVector3f(1,0,0); Tri.TangentX[1] = FVector3f(1,0,0); Tri.TangentX[2] = FVector3f(1,0,0);
+	Tri.TangentY[0] = FVector3f(0,1,0); Tri.TangentY[1] = FVector3f(0,1,0); Tri.TangentY[2] = FVector3f(0,1,0);
 	
 	ImportData.Wedges.Add(V0);
 	ImportData.Wedges.Add(V1);
@@ -166,7 +167,7 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	}
 	
 	IAnimationDataController& Controller = AnimSequence->GetController();
-	Controller.OpenBracket(TEXT("Import BVH"));
+	Controller.OpenBracket(FText::FromString(TEXT("Import BVH")));
 	
 	AnimSequence->ImportFileFramerate = 1.0 / Data.FrameTime;
 	AnimSequence->ImportResampleFramerate = 1.0 / Data.FrameTime;
