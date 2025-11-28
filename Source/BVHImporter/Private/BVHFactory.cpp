@@ -10,6 +10,10 @@
 #include "Misc/FeedbackContext.h"
 #include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "MeshUtilities.h"
+#include "Materials/Material.h"
+#include "Interfaces/ITargetPlatform.h"
+#include "Interfaces/ITargetPlatformManagerModule.h"
 
 UBVHFactory::UBVHFactory()
 {
@@ -94,13 +98,23 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	UPackage* SkeletonPackage = CreatePackage(*SkeletonPackageName);
 	USkeleton* Skeleton = NewObject<USkeleton>(SkeletonPackage, FName(*SkeletonName), Flags | RF_Public | RF_Standalone | RF_Transactional);
 	
-	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
-	FReferenceSkeletonModifier Modifier(const_cast<FReferenceSkeleton&>(RefSkeleton), Skeleton);
-	
+	// Build Reference Skeleton locally first
+	FReferenceSkeleton LocalRefSkeleton;
 	TMap<FString, FName> BoneMap; // BVH Node Name -> UE Bone Name
-	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Building Skeleton Hierarchy..."));
-	BuildSkeletonHierarchy(Data.RootNode, Modifier, NAME_None, BoneMap);
-	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Hierarchy built. Bone count: %d"), BoneMap.Num());
+	{
+		FReferenceSkeletonModifier Modifier(LocalRefSkeleton, nullptr);
+		
+		UE_LOG(LogTemp, Log, TEXT("BVHFactory: Building Skeleton Hierarchy..."));
+		BuildSkeletonHierarchy(Data.RootNode, Modifier, NAME_None, BoneMap);
+		UE_LOG(LogTemp, Log, TEXT("BVHFactory: Hierarchy built. Bone count: %d"), BoneMap.Num());
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: LocalRefSkeleton bone count: %d"), LocalRefSkeleton.GetNum());
+	if (LocalRefSkeleton.GetNum() == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BVHFactory: LocalRefSkeleton is empty!"));
+		return nullptr;
+	}
 	
 	// 2. Create Skeletal Mesh (Dummy)
 	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating Skeletal Mesh..."));
@@ -115,7 +129,6 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	ImportData.Points.Add(FVector3f(0, 0, 0));
 	ImportData.Points.Add(FVector3f(0, 1, 0));
 	ImportData.Points.Add(FVector3f(0, 0, 1));
-	
 	SkeletalMeshImportData::FVertex V0, V1, V2;
 	V0.VertexIndex = 0; V1.VertexIndex = 1; V2.VertexIndex = 2;
 	V0.MatIndex = 0; V1.MatIndex = 0; V2.MatIndex = 0;
@@ -153,12 +166,38 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	Mat.MaterialImportName = TEXT("DummyMat");
 	ImportData.Materials.Add(Mat);
 	
-	// Save Import Data
-	SkeletalMesh->SaveLODImportedData(0, ImportData);
+	// Populate RefBonesBinary from Skeleton
+	const TArray<FMeshBoneInfo>& RefBoneInfos = LocalRefSkeleton.GetRefBoneInfo();
+	const TArray<FTransform>& RefBonePose = LocalRefSkeleton.GetRefBonePose();
 	
-	// Finalize Skeleton and Mesh
-	Skeleton->MergeAllBonesToBoneTree(SkeletalMesh);
-	SkeletalMesh->PostEditChange();
+	for (int32 i = 0; i < RefBoneInfos.Num(); ++i)
+	{
+		SkeletalMeshImportData::FBone Bone;
+		Bone.Name = RefBoneInfos[i].Name.ToString();
+		Bone.Flags = 0;
+		Bone.ParentIndex = RefBoneInfos[i].ParentIndex;
+		Bone.NumChildren = 0; // Will calculate below
+		
+		FTransform BoneTransform = RefBonePose[i];
+		Bone.BonePos.Transform = FTransform3f(BoneTransform);
+		Bone.BonePos.Length = 1.0f; 
+		Bone.BonePos.XSize = 1.0f;
+		Bone.BonePos.YSize = 1.0f;
+		Bone.BonePos.ZSize = 1.0f;
+		
+		ImportData.RefBonesBinary.Add(Bone);
+	}
+	
+	// Calculate NumChildren
+	for (int32 i = 0; i < ImportData.RefBonesBinary.Num(); ++i)
+	{
+		int32 ParentIdx = ImportData.RefBonesBinary[i].ParentIndex;
+		if (ParentIdx != INDEX_NONE && ParentIdx < ImportData.RefBonesBinary.Num())
+		{
+			ImportData.RefBonesBinary[ParentIdx].NumChildren++;
+		}
+	}
+	Skeleton->SetPreviewMesh(SkeletalMesh);
 	Skeleton->PostEditChange();
 
 	FAssetRegistryModule::AssetCreated(Skeleton);
