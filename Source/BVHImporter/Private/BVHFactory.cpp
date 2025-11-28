@@ -127,6 +127,8 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	USkeletalMesh* SkeletalMesh = NewObject<USkeletalMesh>(MeshPackage, FName(*MeshName), Flags | RF_Public | RF_Standalone | RF_Transactional);
 	SkeletalMesh->SetSkeleton(Skeleton);
 	
+	SkeletalMesh->PreEditChange(nullptr);
+
 	// Create a dummy triangle to satisfy engine requirements for skeletal meshes
 	FSkeletalMeshImportData ImportData;
 	ImportData.Points.Add(FVector3f(0, 0, 0));
@@ -216,6 +218,14 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	FSkeletalMeshLODInfo& LODInfo = SkeletalMesh->AddLODInfo();
 	LODInfo.ScreenSize.Default = 1.0f;
 	LODInfo.LODHysteresis = 0.02f;
+	LODInfo.bAllowCPUAccess = true;
+
+	// Add Default Material
+	FSkeletalMaterial MeshMaterial;
+	MeshMaterial.MaterialInterface = UMaterial::GetDefaultMaterial(MD_Surface);
+	MeshMaterial.MaterialSlotName = TEXT("DummyMat");
+	MeshMaterial.ImportedMaterialSlotName = TEXT("DummyMat");
+	SkeletalMesh->GetMaterials().Add(MeshMaterial);
 
 	// Ensure ImportedModel has an LODModel for LOD 0
 	if (SkeletalMesh->GetImportedModel())
@@ -242,6 +252,17 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	// Use ImportData.GetMeshDescription instead of MeshUtilities
 	ImportData.GetMeshDescription(SkeletalMesh, &LODInfo.BuildSettings, MeshDescription);
 	
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: MeshDescription Stats: Vertices=%d, Polygons=%d"), 
+		MeshDescription.Vertices().Num(), MeshDescription.Polygons().Num());
+
+	// Calculate Bounds
+	FBox3f FloatBox(ImportData.Points);
+	FBox BoundingBox(FloatBox);
+	SkeletalMesh->SetImportedBounds(FBoxSphereBounds(BoundingBox));
+
+	// SetLODImportedDataVersions is deprecated for MeshDescription based workflows
+	// SkeletalMesh->SetLODImportedDataVersions(0, ESkeletalMeshGeoImportVersions::LatestVersion, ESkeletalMeshSkinningImportVersions::LatestVersion);
+
 	// Commit to SkeletalMesh
 	SkeletalMesh->CreateMeshDescription(0, MoveTemp(MeshDescription));
 	SkeletalMesh->CommitMeshDescription(0);
@@ -340,7 +361,21 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	}
 
 	Skeleton->SetPreviewMesh(SkeletalMesh);
+	
+	// Force InitResources
+	SkeletalMesh->PostLoad();
+	SkeletalMesh->CalculateExtendedBounds();
+
 	Skeleton->PostEditChange();
+
+	if (SkeletalMesh->GetResourceForRendering())
+	{
+		UE_LOG(LogTemp, Log, TEXT("BVHFactory: SkeletalMesh has valid RenderData."));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("BVHFactory: SkeletalMesh has NO RenderData!"));
+	}
 
 	FAssetRegistryModule::AssetCreated(Skeleton);
 	FAssetRegistryModule::AssetCreated(SkeletalMesh);
