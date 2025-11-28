@@ -4,6 +4,7 @@
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
 #include "Rendering/SkeletalMeshLODImporterData.h"
+#include "AssetCompilingManager.h"
 #include "Rendering/SkeletalMeshModel.h"
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "ReferenceSkeleton.h"
@@ -14,6 +15,8 @@
 #include "Materials/Material.h"
 #include "Interfaces/ITargetPlatform.h"
 #include "Interfaces/ITargetPlatformManagerModule.h"
+#include "MeshDescription.h"
+#include "SkeletalMeshAttributes.h"
 
 UBVHFactory::UBVHFactory()
 {
@@ -134,34 +137,32 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	V0.MatIndex = 0; V1.MatIndex = 0; V2.MatIndex = 0;
 	V0.UVs[0] = FVector2f(0, 0); V1.UVs[0] = FVector2f(1, 0); V2.UVs[0] = FVector2f(0, 1);
 	
+	ImportData.Wedges.Add(V0);
+	ImportData.Wedges.Add(V1);
+	ImportData.Wedges.Add(V2);
+	
 	SkeletalMeshImportData::FTriangle Tri;
 	Tri.WedgeIndex[0] = 0; Tri.WedgeIndex[1] = 1; Tri.WedgeIndex[2] = 2;
 	Tri.MatIndex = 0;
 	Tri.AuxMatIndex = 0;
-	Tri.SmoothingGroups = 0;
+	Tri.SmoothingGroups = 1; // Use 1 for smoothing
 	Tri.TangentZ[0] = FVector3f(0,0,1); Tri.TangentZ[1] = FVector3f(0,0,1); Tri.TangentZ[2] = FVector3f(0,0,1);
 	Tri.TangentX[0] = FVector3f(1,0,0); Tri.TangentX[1] = FVector3f(1,0,0); Tri.TangentX[2] = FVector3f(1,0,0);
 	Tri.TangentY[0] = FVector3f(0,1,0); Tri.TangentY[1] = FVector3f(0,1,0); Tri.TangentY[2] = FVector3f(0,1,0);
 	
-	ImportData.Wedges.Add(V0);
-	ImportData.Wedges.Add(V1);
-	ImportData.Wedges.Add(V2);
 	ImportData.Faces.Add(Tri);
+
+	// Add Influences (Bind all to root bone 0)
+	for (int32 i = 0; i < 3; ++i)
+	{
+		SkeletalMeshImportData::FRawBoneInfluence Influence;
+		Influence.VertexIndex = i;
+		Influence.BoneIndex = 0;
+		Influence.Weight = 1.0f;
+		ImportData.Influences.Add(Influence);
+		ImportData.PointToRawMap.Add(i);
+	}
 	
-	ImportData.PointToRawMap.Add(0);
-	ImportData.PointToRawMap.Add(1);
-	ImportData.PointToRawMap.Add(2);
-	
-	// Weight to root bone (Index 0)
-	SkeletalMeshImportData::FRawBoneInfluence Inf0, Inf1, Inf2;
-	Inf0.BoneIndex = 0; Inf0.VertexIndex = 0; Inf0.Weight = 1.0f;
-	Inf1.BoneIndex = 0; Inf1.VertexIndex = 1; Inf1.Weight = 1.0f;
-	Inf2.BoneIndex = 0; Inf2.VertexIndex = 2; Inf2.Weight = 1.0f;
-	ImportData.Influences.Add(Inf0);
-	ImportData.Influences.Add(Inf1);
-	ImportData.Influences.Add(Inf2);
-	
-	// Materials
 	SkeletalMeshImportData::FMaterial Mat;
 	Mat.MaterialImportName = TEXT("DummyMat");
 	ImportData.Materials.Add(Mat);
@@ -197,6 +198,147 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 			ImportData.RefBonesBinary[ParentIdx].NumChildren++;
 		}
 	}
+
+	// Finalize Skeleton and Mesh
+	SkeletalMesh->SetRefSkeleton(LocalRefSkeleton);
+	SkeletalMesh->CalculateInvRefMatrices();
+
+	// Sync Skeleton with SkeletalMesh
+	if (Skeleton->MergeAllBonesToBoneTree(SkeletalMesh))
+	{
+		UE_LOG(LogTemp, Log, TEXT("BVHFactory: Merged bones to Skeleton successfully."));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("BVHFactory: MergeAllBonesToBoneTree returned false."));
+	}
+	
+	FSkeletalMeshLODInfo& LODInfo = SkeletalMesh->AddLODInfo();
+	LODInfo.ScreenSize.Default = 1.0f;
+	LODInfo.LODHysteresis = 0.02f;
+
+	// Ensure ImportedModel has an LODModel for LOD 0
+	if (SkeletalMesh->GetImportedModel())
+	{
+		if (SkeletalMesh->GetImportedModel()->LODModels.Num() == 0)
+		{
+			SkeletalMesh->GetImportedModel()->LODModels.Add(new FSkeletalMeshLODModel());
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("BVHFactory: SkeletalMesh has no ImportedModel!"));
+	}
+
+	// Migrate to MeshDescription
+	FMeshDescription MeshDescription;
+	FSkeletalMeshAttributes MeshAttributes(MeshDescription);
+	MeshAttributes.Register();
+
+	// Build Mesh
+	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities");
+	
+	// Convert ImportData to MeshDescription
+	// Use ImportData.GetMeshDescription instead of MeshUtilities
+	ImportData.GetMeshDescription(SkeletalMesh, &LODInfo.BuildSettings, MeshDescription);
+	
+	// Commit to SkeletalMesh
+	SkeletalMesh->CreateMeshDescription(0, MoveTemp(MeshDescription));
+	SkeletalMesh->CommitMeshDescription(0);
+
+	// Explicitly build the LODModel using MeshUtilities to ensure RenderData can be generated
+	if (SkeletalMesh->GetImportedModel() && SkeletalMesh->GetImportedModel()->LODModels.Num() > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("BVHFactory: ImportData Stats: Points=%d, Wedges=%d, Faces=%d, Influences=%d"), 
+			ImportData.Points.Num(), ImportData.Wedges.Num(), ImportData.Faces.Num(), ImportData.Influences.Num());
+
+		FSkeletalMeshLODModel& LODModel = SkeletalMesh->GetImportedModel()->LODModels[0];
+		IMeshUtilities::MeshBuildOptions BuildOptions;
+		// LODInfo.BuildSettings.bForceRebuild = true; // Not available
+		BuildOptions.FillOptions(LODInfo.BuildSettings);
+		
+		// Convert ImportData types to BuildSkeletalMesh types
+		TArray<SkeletalMeshImportData::FVertInfluence> Influences;
+		Influences.Reserve(ImportData.Influences.Num());
+		for (const auto& RawInfluence : ImportData.Influences)
+		{
+			SkeletalMeshImportData::FVertInfluence Influence;
+			Influence.Weight = RawInfluence.Weight;
+			Influence.VertIndex = RawInfluence.VertexIndex;
+			Influence.BoneIndex = RawInfluence.BoneIndex;
+			Influences.Add(Influence);
+		}
+
+		TArray<SkeletalMeshImportData::FMeshWedge> Wedges;
+		Wedges.Reserve(ImportData.Wedges.Num());
+		for (const auto& RawWedge : ImportData.Wedges)
+		{
+			SkeletalMeshImportData::FMeshWedge Wedge;
+			Wedge.iVertex = RawWedge.VertexIndex;
+			for (int32 i = 0; i < MAX_TEXCOORDS; ++i)
+			{
+				Wedge.UVs[i] = RawWedge.UVs[i];
+			}
+			Wedge.Color = RawWedge.Color;
+			Wedges.Add(Wedge);
+		}
+
+		TArray<SkeletalMeshImportData::FMeshFace> Faces;
+		Faces.Reserve(ImportData.Faces.Num());
+		for (const auto& RawFace : ImportData.Faces)
+		{
+			SkeletalMeshImportData::FMeshFace Face;
+			Face.iWedge[0] = RawFace.WedgeIndex[0];
+			Face.iWedge[1] = RawFace.WedgeIndex[1];
+			Face.iWedge[2] = RawFace.WedgeIndex[2];
+			Face.MeshMaterialIndex = RawFace.MatIndex;
+			Face.SmoothingGroups = RawFace.SmoothingGroups;
+			for (int32 i = 0; i < 3; ++i)
+			{
+				Face.TangentX[i] = RawFace.TangentX[i];
+				Face.TangentY[i] = RawFace.TangentY[i];
+				Face.TangentZ[i] = RawFace.TangentZ[i];
+			}
+			Faces.Add(Face);
+		}
+
+		bool bBuildSuccess = MeshUtilities.BuildSkeletalMesh(
+			LODModel,
+			SkeletalMesh->GetName(),
+			SkeletalMesh->GetRefSkeleton(),
+			Influences,
+			Wedges,
+			Faces,
+			ImportData.Points,
+			ImportData.PointToRawMap,
+			BuildOptions
+		);
+
+		if (bBuildSuccess)
+		{
+			UE_LOG(LogTemp, Log, TEXT("BVHFactory: BuildSkeletalMesh successful."));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("BVHFactory: BuildSkeletalMesh failed!"));
+		}
+	}
+
+	if (SkeletalMesh->GetImportedModel() && SkeletalMesh->GetImportedModel()->LODModels.Num() > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("BVHFactory: ImportedModel created successfully. LODModels count: %d"), SkeletalMesh->GetImportedModel()->LODModels.Num());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("BVHFactory: ImportedModel is invalid or has no LODModels after CommitMeshDescription!"));
+	}
+
+	// Ensure compilation is finished
+	if (FAssetCompilingManager::Get().GetNumRemainingAssets() > 0)
+	{
+		FAssetCompilingManager::Get().FinishAllCompilation();
+	}
+
 	Skeleton->SetPreviewMesh(SkeletalMesh);
 	Skeleton->PostEditChange();
 
@@ -209,7 +351,6 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	AnimSequence->SetSkeleton(Skeleton);
 	AnimSequence->SetPreviewMesh(SkeletalMesh);
 	
-	// Flatten tree in DFS order to match channel data
 	TArray<TSharedPtr<FBVHNode>> FlatNodes;
 	
 	struct FNodeCollector
