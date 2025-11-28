@@ -56,6 +56,7 @@ bool FBVHParser::ParseHierarchy(TSharedPtr<FBVHNode>& OutRootNode)
 	FString Token = GetNextToken(Line);
 	if (Token != TEXT("ROOT"))
 	{
+		UE_LOG(LogTemp, Error, TEXT("BVHParser: Expected ROOT, found '%s'"), *Token);
 		return false;
 	}
 
@@ -73,6 +74,9 @@ bool FBVHParser::ParseNode(TSharedPtr<FBVHNode> ParentNode, TSharedPtr<FBVHNode>
 	TArray<FString> Tokens;
 	CurrentLine.ParseIntoArray(Tokens, TEXT(" "), true);
 	
+	OutNode = MakeShared<FBVHNode>();
+	OutNode->Parent = ParentNode;
+	
 	if (Tokens.Num() >= 2)
 	{
 		OutNode->Name = Tokens[1];
@@ -81,6 +85,8 @@ bool FBVHParser::ParseNode(TSharedPtr<FBVHNode> ParentNode, TSharedPtr<FBVHNode>
 	{
 		OutNode->Name = TEXT("Root");
 	}
+	
+	// UE_LOG(LogTemp, Log, TEXT("BVHParser: Parsing Node '%s'"), *OutNode->Name);
 
 	FString Line;
 	if (!ReadLine(Line) || Line.TrimStartAndEnd() != TEXT("{"))

@@ -68,15 +68,27 @@ void BuildSkeletonHierarchy(const TSharedPtr<FBVHNode>& Node, FReferenceSkeleton
 
 UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, const FString& Filename, const TCHAR* Parms, FFeedbackContext* Warn, bool& bOutOperationCanceled)
 {
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Starting import of %s"), *Filename);
+
 	FBVHParser Parser(Filename);
 	FBVHData Data;
 	if (!Parser.Parse(Data))
 	{
+		UE_LOG(LogTemp, Error, TEXT("BVHFactory: Failed to parse BVH file."));
 		Warn->Log(ELogVerbosity::Error, TEXT("Failed to parse BVH file."));
 		return nullptr;
 	}
 
+	if (!Data.RootNode.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("BVHFactory: RootNode is invalid after parsing."));
+		return nullptr;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Parsing successful. RootNode: %s, Frames: %d"), *Data.RootNode->Name, Data.NumFrames);
+
 	// 1. Create Skeleton
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating Skeleton..."));
 	FString SkeletonName = InName.ToString() + TEXT("_Skeleton");
 	USkeleton* Skeleton = NewObject<USkeleton>(InParent, FName(*SkeletonName), Flags);
 	
@@ -84,9 +96,12 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	FReferenceSkeletonModifier Modifier(const_cast<FReferenceSkeleton&>(RefSkeleton), Skeleton);
 	
 	TMap<FString, FName> BoneMap; // BVH Node Name -> UE Bone Name
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Building Skeleton Hierarchy..."));
 	BuildSkeletonHierarchy(Data.RootNode, Modifier, NAME_None, BoneMap);
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Hierarchy built. Bone count: %d"), BoneMap.Num());
 	
 	// 2. Create Skeletal Mesh (Dummy)
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating Skeletal Mesh..."));
 	FString MeshName = InName.ToString() + TEXT("_Mesh");
 	USkeletalMesh* SkeletalMesh = NewObject<USkeletalMesh>(InParent, FName(*MeshName), Flags);
 	SkeletalMesh->SetSkeleton(Skeleton);
@@ -138,6 +153,7 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	SkeletalMesh->SaveLODImportedData(0, ImportData);
 	
 	// 3. Create AnimSequence
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating AnimSequence..."));
 	UAnimSequence* AnimSequence = NewObject<UAnimSequence>(InParent, InName, Flags);
 	AnimSequence->SetSkeleton(Skeleton);
 	
@@ -157,6 +173,7 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 		}
 	};
 	FNodeCollector::Collect(Data.RootNode, FlatNodes);
+	UE_LOG(LogTemp, Log, TEXT("BVHFactory: Flattened nodes. Count: %d"), FlatNodes.Num());
 	
 	// Assign start indices
 	int32 CurrentChannelIdx = 0;
@@ -176,8 +193,18 @@ UObject* UBVHFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	
 	for (auto Node : FlatNodes)
 	{
+		if (!Node.IsValid())
+		{
+			UE_LOG(LogTemp, Error, TEXT("BVHFactory: Found invalid node in FlatNodes."));
+			continue;
+		}
+
 		FName BoneName = BoneMap[Node->Name];
-		if (BoneName == NAME_None) continue;
+		if (BoneName == NAME_None)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("BVHFactory: Node %s not found in BoneMap."), *Node->Name);
+			continue;
+		}
 		
 		Controller.AddBoneCurve(BoneName);
 		
