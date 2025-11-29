@@ -473,7 +473,9 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
 
   // Initialize the data model (creates MovieScene etc.)
   AnimSequence->GetController().InitializeModel();
-
+  //IAnimationDataController::FScopedBracket ScopedBracket(
+  //    AnimSequence->GetController(),
+  //    LOCTEXT("CreateAnimationBVH_Bracket", "Creating Animation Sequence"));
   // Set Frame Rate and Length
   // BVH FrameTime is usually seconds per frame.
   // We need to convert this to FFrameRate (Numerator/Denominator).
@@ -509,9 +511,12 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
       continue;
 
     // Add Transform Curve (Bone Track)
-    UAnimationBlueprintLibrary::AddCurve(
-        AnimSequence, BoneName, ERawCurveTrackTypes::RCT_Transform, false);
-
+    if (bKeyAsAddittive) {
+      UAnimationBlueprintLibrary::AddCurve(
+          AnimSequence, BoneName, ERawCurveTrackTypes::RCT_Transform, false);
+    } else {
+      AnimSequence->GetController().AddBoneCurve(BoneName, true);
+    }
     TArray<float> Times;
     TArray<FTransform> Transforms;
     Times.Reserve(Data.NumFrames);
@@ -580,8 +585,27 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
                                 FVector::OneVector));
     }
 
-    UAnimationBlueprintLibrary::AddTransformationCurveKeys(
-        AnimSequence, BoneName, Times, Transforms);
+    if (!bKeyAsAddittive) {
+      TArray<FVector> PositionalKeys;
+      TArray<FQuat> RotationalKeys;
+      TArray<FVector> ScalingKeys;
+      PositionalKeys.Reserve(Transforms.Num());
+      RotationalKeys.Reserve(Transforms.Num());
+      ScalingKeys.Reserve(Transforms.Num());
+
+      for (const FTransform &Transform : Transforms) {
+        PositionalKeys.Add(Transform.GetLocation());
+        RotationalKeys.Add(Transform.GetRotation());
+        ScalingKeys.Add(Transform.GetScale3D());
+      }
+
+      AnimSequence->GetController().SetBoneTrackKeys(
+          BoneName, PositionalKeys, RotationalKeys, ScalingKeys, true);
+      AnimSequence->GetController().NotifyPopulated();
+    } else {
+      UAnimationBlueprintLibrary::AddTransformationCurveKeys(
+          AnimSequence, BoneName, Times, Transforms);
+    }
   }
 
   // Notify Asset Registry
