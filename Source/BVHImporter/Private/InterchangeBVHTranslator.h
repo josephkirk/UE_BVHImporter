@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include "Animation/InterchangeAnimationPayloadInterface.h"
 #include "CoreMinimal.h"
-#include "InterchangeBVHTranslator.generated.h"
 #include "InterchangeTranslatorBase.h"
+#include "Animation/InterchangeAnimationPayloadInterface.h"
+#include "InterchangeBVHTranslator.generated.h"
 
 
 UCLASS(BlueprintType, Experimental, MinimalAPI)
