@@ -1,8 +1,7 @@
 #pragma once
+#include "BVHFactory.generated.h"
 #include "CoreMinimal.h"
 #include "Factories/Factory.h"
-#include "BVHFactory.generated.h"
-
 
 UCLASS()
 class UBVHFactory : public UFactory {
@@ -10,9 +9,6 @@ class UBVHFactory : public UFactory {
 
 public:
   UBVHFactory();
-
-  UPROPERTY(EditAnywhere, Category = "BVH Import")
-  bool bKeyAsAddittive = false;
 
   virtual UObject *FactoryCreateFile(UClass *InClass, UObject *InParent,
                                      FName InName, EObjectFlags Flags,
