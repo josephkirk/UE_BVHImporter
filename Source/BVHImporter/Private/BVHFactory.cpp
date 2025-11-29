@@ -408,6 +408,18 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
   // Initialize the data model (creates MovieScene etc.)
   AnimSequence->GetController().InitializeModel();
 
+  // Set Frame Rate and Length
+  // BVH FrameTime is usually seconds per frame.
+  // We need to convert this to FFrameRate (Numerator/Denominator).
+  // Using a large denominator to approximate the float frame time.
+  double FrameRateVal =
+      1.0 / ((Data.FrameTime > 0) ? Data.FrameTime : 0.033333);
+  FFrameRate FrameRate(FMath::RoundToInt(FrameRateVal),
+                       1); // Simple approximation for now
+
+  AnimSequence->GetController().SetFrameRate(FrameRate);
+  AnimSequence->GetController().SetNumberOfFrames(FFrameNumber(Data.NumFrames));
+
   AnimSequence->PostEditChange();
 
   TArray<TSharedPtr<FBVHNode>> FlatNodes;
