@@ -59,8 +59,9 @@ bool UInterchangeBVHTranslator::Translate(
   FString SkeletonUid = TEXT("Skeleton_") + FPaths::GetBaseFilename(Filename);
   UInterchangeSkeletonFactoryNode *SkeletonFactoryNode =
       NewObject<UInterchangeSkeletonFactoryNode>(&BaseNodeContainer);
+  FString SkeletonDisplayName = FPaths::GetBaseFilename(Filename) + TEXT("_Skeleton");
   SkeletonFactoryNode->InitializeSkeletonNode(
-      SkeletonUid, TEXT("Skeleton"), TEXT("Skeleton"), &BaseNodeContainer);
+      SkeletonUid, SkeletonDisplayName, SkeletonDisplayName, &BaseNodeContainer);
   SkeletonFactoryNode->SetCustomRootJointUid(Data.RootNode->Name);
   BaseNodeContainer.AddNode(SkeletonFactoryNode);
 
