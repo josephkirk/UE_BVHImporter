@@ -1,14 +1,13 @@
 #include "BVHFactory.h"
 #include "Animation/AnimData/IAnimationDataController.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimationSettings.h"
 #include "Animation/Skeleton.h"
 #include "AnimationBlueprintLibrary.h"
 #include "AssetCompilingManager.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "BVHParser.h"
 #include "Engine/SkeletalMesh.h"
-#include "Rendering/SkeletalMeshLODImporterData.h"
-
-#include "AssetRegistry/AssetRegistryModule.h"
 #include "Interfaces/ITargetPlatform.h"
 #include "Interfaces/ITargetPlatformManagerModule.h"
 #include "Materials/Material.h"
@@ -16,10 +15,12 @@
 #include "MeshUtilities.h"
 #include "Misc/FeedbackContext.h"
 #include "ReferenceSkeleton.h"
+#include "Rendering/SkeletalMeshLODImporterData.h"
 #include "Rendering/SkeletalMeshModel.h"
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "SkeletalMeshAttributes.h"
 #include "UObject/SavePackage.h"
+
 
 UBVHFactory::UBVHFactory() {
   SupportedClass = UAnimSequence::StaticClass();
@@ -473,27 +474,16 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
 
   // Initialize the data model (creates MovieScene etc.)
   AnimSequence->GetController().InitializeModel();
-  // IAnimationDataController::FScopedBracket ScopedBracket(
-  //     AnimSequence->GetController(),
-  //     LOCTEXT("CreateAnimationBVH_Bracket", "Creating Animation Sequence"));
-  //  Set Frame Rate and Length
-  //  BVH FrameTime is usually seconds per frame.
-  //  We need to convert this to FFrameRate (Numerator/Denominator).
-  // Calculate FrameRate with high precision to match BVH FrameTime exactly
-  // FrameTime is seconds per frame. FrameRate is frames per second (Numerator /
-  // Denominator). We want Denominator / Numerator = FrameTime. Let's fix
-  // Numerator to a large value to capture precision.
-  const int32 TargetNumerator = 100000000;
-  double TargetDenominatorVal =
-      (Data.FrameTime > 0 ? Data.FrameTime : 0.033333) * TargetNumerator;
-  int32 TargetDenominator = FMath::RoundToInt(TargetDenominatorVal);
 
-  if (TargetDenominator <= 0)
-    TargetDenominator = 1;
+  // Reset NumberOfFrames to 0 to avoid incompatible resampling errors when
+  // changing FrameRate InitializeModel() might create a default sequence with
+  // non-zero length at default FrameRate (30fps).
 
-  FFrameRate FrameRate(TargetNumerator, TargetDenominator);
+  FFrameRate PlatformTargetFrameRate =
+      UAnimationSettings::Get()->GetDefaultFrameRate();
 
-  AnimSequence->GetController().SetFrameRate(FrameRate);
+  AnimSequence->GetController().SetNumberOfFrames(FFrameNumber(0));
+  AnimSequence->GetController().SetFrameRate(PlatformTargetFrameRate);
   AnimSequence->GetController().SetNumberOfFrames(FFrameNumber(Data.NumFrames));
 
   // Populate Animation Data using AnimationBlueprintLibrary
