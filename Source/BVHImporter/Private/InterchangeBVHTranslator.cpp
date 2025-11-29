@@ -133,32 +133,6 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
     NodesToProcess.Add(Data.RootNode);
   }
 
-  int32 CurrentChannelIdx = 0;
-  while (NodesToProcess.Num() > 0) {
-    TSharedPtr<FBVHNode> Node = NodesToProcess.Pop();
-    Node->ChannelStartIndex =
-        CurrentChannelIdx; // Re-calculate as Parser might not persist this if
-                           // we didn't use the exact same logic, but
-                           // Parser.Parse does it?
-    // Actually Parser.Parse calls ParseMotion which likely doesn't set
-    // ChannelStartIndex on nodes if it's not stored in Node. Checking
-    // BVHParser.h: FBVHNode has ChannelStartIndex. Checking BVHParser.cpp (not
-    // visible but assumed): It should populate it. Wait, in BVHFactory.cpp, it
-    // calculates ChannelStartIndex manually! "int32 CurrentChannelIdx = 0; for
-    // (auto Node : FlatNodes) { Node->ChannelStartIndex = CurrentChannelIdx;
-    // CurrentChannelIdx += Node->Channels.Num(); }" So I must do the same here.
-
-    // But I need to traverse in the same order as the parser did (usually Depth
-    // First or whatever the file order is). BVHParser usually parses hierarchy
-    // recursively. So I should traverse recursively to match channel order.
-    // Actually, let's just use a recursive collector.
-
-    NodeMap.Add(Node->Name, Node);
-    // Note: Pop() from Array is LIFO (Stack), so it reverses order if I just
-    // add children. I should use a proper traversal to match channel indices.
-    // Let's assume I need to recalculate indices.
-  }
-
   // Re-traverse to set channel indices correctly
   {
     int32 ChannelIdx = 0;
