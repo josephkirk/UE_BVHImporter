@@ -21,6 +21,5 @@ I needed to bulk import some mocap data and didn't want to deal with retargeting
 
 ## Notes
 - It converts the coordinates from BVH (Y-up) to UE (Z-up) automatically.
-- The mesh is super basic, just enough to make the animation asset valid. You'll probably want to retarget the animation to your actual character anyway.
 - Works on my machine with Unreal Engine 5.6. Feel free to fork it if you need more features or create issue/feature request on project github.
 - Tested on Bandai Namco and 1000 Styles mocap datasets.
