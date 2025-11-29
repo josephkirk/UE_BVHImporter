@@ -5,10 +5,10 @@
 #include "InterchangeAnimSequenceFactoryNode.h"
 #include "InterchangeCommonAnimationPayload.h"
 #include "InterchangeManager.h"
+#include "InterchangeSceneNode.h"
 #include "InterchangeSkeletonFactoryNode.h"
 #include "Misc/Paths.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
-#include "Nodes/InterchangeSceneNode.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(InterchangeBVHTranslator)
 
@@ -60,8 +60,8 @@ bool UInterchangeBVHTranslator::Translate(
   FString SkeletonUid = TEXT("Skeleton_") + FPaths::GetBaseFilename(Filename);
   UInterchangeSkeletonFactoryNode *SkeletonFactoryNode =
       NewObject<UInterchangeSkeletonFactoryNode>(&BaseNodeContainer);
-  SkeletonFactoryNode->InitializeSkeletonNode(SkeletonUid, TEXT("Skeleton"),
-                                              &BaseNodeContainer);
+  SkeletonFactoryNode->InitializeSkeletonNode(
+      SkeletonUid, TEXT("Skeleton"), TEXT("Skeleton"), &BaseNodeContainer);
   SkeletonFactoryNode->SetCustomRootJointUid(Data.RootNode->Name);
   BaseNodeContainer.AddNode(SkeletonFactoryNode);
 
@@ -89,7 +89,8 @@ bool UInterchangeBVHTranslator::Translate(
     FString NodeUid = Node->Name;
     UInterchangeSceneNode *SceneNode =
         NewObject<UInterchangeSceneNode>(&BaseNodeContainer);
-    SceneNode->InitializeSceneNode(NodeUid, Node->Name, &BaseNodeContainer);
+    SceneNode->InitializeNode(NodeUid, Node->Name,
+                              EInterchangeNodeContainerType::TranslatedScene);
 
     // Set Transform (Local Offset)
     // BVH Offset is X, Y, Z. Convert to UE: X, -Z, Y
@@ -102,7 +103,7 @@ bool UInterchangeBVHTranslator::Translate(
 
     // Set Hierarchy
     if (Node->Parent.IsValid()) {
-      BaseNodeContainer.SetNodeParentGuid(NodeUid, Node->Parent.Pin()->Name);
+      BaseNodeContainer.SetNodeParentUid(NodeUid, Node->Parent.Pin()->Name);
     }
 
     BaseNodeContainer.AddNode(SceneNode);

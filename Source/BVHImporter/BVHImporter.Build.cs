@@ -47,7 +47,9 @@ public class BVHImporter : ModuleRules
 				"InterchangeCore",
 				"InterchangeEngine",
 				"InterchangeFactoryNodes",
-				"InterchangeImport"
+				"InterchangeImport",
+				"InterchangeCommonParser",
+				"InterchangeNodes"
 			}
 			);
 		
