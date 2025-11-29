@@ -15,9 +15,9 @@ I needed to bulk import some mocap data and didn't want to deal with retargeting
 
 ## How to use
 1. Drop the `BVHImporter` folder into your project's `Plugins` folder.
-2. Compile.
+2. Compile or use the precompiled zipped plugin in Release.
 3. Drag & drop your `.bvh` files.
-4. Done.
+4. Preview the animation in the content browser.
 
 ## Notes
 - It converts the coordinates from BVH (Y-up) to UE (Z-up) automatically.
