@@ -1,7 +1,8 @@
 #pragma once
-#include "BVHFactory.generated.h"
 #include "CoreMinimal.h"
 #include "Factories/Factory.h"
+#include "BVHFactory.generated.h"
+
 
 UCLASS()
 class UBVHFactory : public UFactory {
