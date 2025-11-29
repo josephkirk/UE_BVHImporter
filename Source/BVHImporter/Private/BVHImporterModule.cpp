@@ -23,8 +23,8 @@ void FBVHImporterModule::StartupModule() {
 }
 
 void FBVHImporterModule::ShutdownModule() {
-  // No explicit unregister needed as InterchangeManager cleans up or it
-  // persists until shutdown
+  // No explicit unregister needed: InterchangeManager automatically unregisters
+  // translators during shutdown as part of its internal cleanup process.
 }
 
 #undef LOCTEXT_NAMESPACE
