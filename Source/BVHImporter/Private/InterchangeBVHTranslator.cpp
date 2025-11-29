@@ -4,7 +4,6 @@
 #include "BVHParser.h"
 #include "InterchangeAnimSequenceFactoryNode.h"
 #include "InterchangeCommonAnimationPayload.h"
-#include "InterchangeManager.h"
 #include "InterchangeSceneNode.h"
 #include "InterchangeSkeletonFactoryNode.h"
 #include "Misc/Paths.h"
