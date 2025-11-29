@@ -2,11 +2,12 @@
 
 #pragma once
 
+#include "Animation/InterchangeAnimationPayloadInterface.h"
+#include "BVHParser.h"
 #include "CoreMinimal.h"
 #include "InterchangeTranslatorBase.h"
-#include "Animation/InterchangeAnimationPayloadInterface.h"
-#include "InterchangeBVHTranslator.generated.h"
 
+#include "InterchangeBVHTranslator.generated.h"
 
 UCLASS(BlueprintType, Experimental, MinimalAPI)
 class UInterchangeBVHTranslator : public UInterchangeTranslatorBase,
@@ -28,4 +29,10 @@ public:
   GetAnimationPayloadData(const TArray<UE::Interchange::FAnimationPayloadQuery>
                               &PayloadQueries) const override;
   /** IInterchangeAnimationPayloadInterface End */
+
+private:
+  mutable TOptional<FBVHData> CachedBVHData;
+  mutable FString CachedFilename;
+
+  const FBVHData *GetBVHData(const FString &Filename) const;
 };

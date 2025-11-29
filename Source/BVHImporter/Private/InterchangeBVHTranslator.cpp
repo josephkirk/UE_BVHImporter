@@ -10,7 +10,6 @@
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "Nodes/InterchangeSceneNode.h"
 
-
 #include UE_INLINE_GENERATED_CPP_BY_NAME(InterchangeBVHTranslator)
 
 EInterchangeTranslatorType
@@ -27,6 +26,23 @@ TArray<FString> UInterchangeBVHTranslator::GetSupportedFormats() const {
   return {TEXT("bvh;Biovision Hierarchy")};
 }
 
+const FBVHData *
+UInterchangeBVHTranslator::GetBVHData(const FString &Filename) const {
+  if (CachedBVHData.IsSet() && CachedFilename == Filename) {
+    return &CachedBVHData.GetValue();
+  }
+
+  FBVHParser Parser(Filename);
+  FBVHData Data;
+  if (Parser.Parse(Data)) {
+    CachedBVHData = MoveTemp(Data);
+    CachedFilename = Filename;
+    return &CachedBVHData.GetValue();
+  }
+
+  return nullptr;
+}
+
 bool UInterchangeBVHTranslator::Translate(
     UInterchangeBaseNodeContainer &BaseNodeContainer) const {
   FString Filename = GetSourceData()->GetFilename();
@@ -34,15 +50,11 @@ bool UInterchangeBVHTranslator::Translate(
     return false;
   }
 
-  FBVHParser Parser(Filename);
-  FBVHData Data;
-  if (!Parser.Parse(Data)) {
+  const FBVHData *DataPtr = GetBVHData(Filename);
+  if (!DataPtr || !DataPtr->RootNode.IsValid()) {
     return false;
   }
-
-  if (!Data.RootNode.IsValid()) {
-    return false;
-  }
+  const FBVHData &Data = *DataPtr;
 
   // Create Skeleton Factory Node
   FString SkeletonUid = TEXT("Skeleton_") + FPaths::GetBaseFilename(Filename);
@@ -120,11 +132,11 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
   TArray<UE::Interchange::FAnimationPayloadData> PayloadDatas;
 
   FString Filename = GetSourceData()->GetFilename();
-  FBVHParser Parser(Filename);
-  FBVHData Data;
-  if (!Parser.Parse(Data)) {
+  const FBVHData *DataPtr = GetBVHData(Filename);
+  if (!DataPtr) {
     return PayloadDatas;
   }
+  const FBVHData &Data = *DataPtr;
 
   // Flatten nodes for easy lookup
   TMap<FString, TSharedPtr<FBVHNode>> NodeMap;
@@ -180,7 +192,8 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
   for (const auto &Query : PayloadQueries) {
     FString PayloadKey = Query.PayloadKey.UniqueId;
     // Format: Filename + "|" + NodeName
-    // Using '|' as a delimiter to avoid ambiguity with underscores in filenames or node names.
+    // Using '|' as a delimiter to avoid ambiguity with underscores in filenames
+    // or node names.
 
     // Extract NodeName from PayloadKey using the delimiter.
     FString NodeName;
