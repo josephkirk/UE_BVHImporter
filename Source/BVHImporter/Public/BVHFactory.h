@@ -1,19 +1,20 @@
 #pragma once
-
 #include "CoreMinimal.h"
 #include "Factories/Factory.h"
 #include "BVHFactory.generated.h"
 
+
 UCLASS()
-class UBVHFactory : public UFactory
-{
-	GENERATED_BODY()
+class UBVHFactory : public UFactory {
+  GENERATED_BODY()
 
 public:
-	UBVHFactory();
+  UBVHFactory();
 
-
-	virtual UObject* FactoryCreateFile(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, const FString& Filename, const TCHAR* Parms, FFeedbackContext* Warn, bool& bOutOperationCanceled) override;
-	virtual bool FactoryCanImport(const FString& Filename) override;
-
+  virtual UObject *FactoryCreateFile(UClass *InClass, UObject *InParent,
+                                     FName InName, EObjectFlags Flags,
+                                     const FString &Filename,
+                                     const TCHAR *Parms, FFeedbackContext *Warn,
+                                     bool &bOutOperationCanceled) override;
+  virtual bool FactoryCanImport(const FString &Filename) override;
 };
