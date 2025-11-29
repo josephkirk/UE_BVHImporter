@@ -179,25 +179,14 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
 
   for (const auto &Query : PayloadQueries) {
     FString PayloadKey = Query.PayloadKey.UniqueId;
-    // Format: Filename + "_" + NodeName
-    // But Filename might contain underscores.
-    // Better to check if it ends with the node name?
-    // Or just use the NodeName if we assume unique names.
-    // In Translate, I used: Filename + TEXT("_") + Node->Name;
+    // Format: Filename + "|" + NodeName
+    // Using '|' as a delimiter to avoid ambiguity with underscores in filenames or node names.
 
-    // Let's try to extract NodeName.
-    // Since I have the NodeMap, I can check which node name matches the suffix.
-    // Or better, I can store the NodeName directly in the PayloadKey if I
-    // could, but PayloadKey is a string. I'll assume the suffix is the
-    // NodeName.
-
+    // Extract NodeName from PayloadKey using the delimiter.
     FString NodeName;
-    // Find the node that matches the key
-    for (const auto &Pair : NodeMap) {
-      if (PayloadKey.EndsWith(TEXT("_") + Pair.Key)) {
-        NodeName = Pair.Key;
-        break;
-      }
+    int32 DelimIdx;
+    if (PayloadKey.FindLastChar(TEXT('|'), DelimIdx)) {
+      NodeName = PayloadKey.Mid(DelimIdx + 1);
     }
 
     if (NodeName.IsEmpty() || !NodeMap.Contains(NodeName)) {
