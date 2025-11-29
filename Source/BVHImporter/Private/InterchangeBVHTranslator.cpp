@@ -109,7 +109,7 @@ bool UInterchangeBVHTranslator::Translate(
     BaseNodeContainer.AddNode(SceneNode);
 
     // Add to Animation Payload Map
-    FString PayloadKey = Filename + TEXT("_") + Node->Name;
+    FString PayloadKey = Filename + TEXT("|") + Node->Name;
     SceneNodeAnimationPayloadKeyUids.Add(NodeUid, PayloadKey);
     SceneNodeAnimationPayloadKeyTypes.Add(
         NodeUid, (uint8)EInterchangeAnimationPayLoadType::BAKED);
