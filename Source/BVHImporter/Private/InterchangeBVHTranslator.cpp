@@ -138,57 +138,35 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
   }
   const FBVHData &Data = *DataPtr;
 
-  // Flatten nodes for easy lookup
+  // Flatten nodes for easy lookup and assign channel indices in one traversal
   TMap<FString, TSharedPtr<FBVHNode>> NodeMap;
   TArray<TSharedPtr<FBVHNode>> NodesToProcess;
   if (Data.RootNode.IsValid()) {
     NodesToProcess.Add(Data.RootNode);
   }
 
-  // Re-traverse to set channel indices correctly
+  // Traverse hierarchy to set channel indices and populate NodeMap
   {
     int32 ChannelIdx = 0;
-    TArray<TSharedPtr<FBVHNode>> Stack;
-    if (Data.RootNode.IsValid())
-      Stack.Add(Data.RootNode);
-
     // BVH channels are stored in the order of the hierarchy in the file.
     // The parser builds the hierarchy.
-    // I need to visit nodes in the order they appear in the file to assign
-    // channel indices. Since I don't have the file order preserved explicitly
-    // in a list, I rely on the hierarchy. Standard BVH is recursive
-    // depth-first.
-
+    // Visit nodes in the order they appear in the file to assign channel indices and populate NodeMap.
     struct FChannelVisitor {
-      static void Visit(TSharedPtr<FBVHNode> Node, int32 &InOutChannelIdx) {
+      static void Visit(TSharedPtr<FBVHNode> Node, int32 &InOutChannelIdx, TMap<FString, TSharedPtr<FBVHNode>>& NodeMap) {
         Node->ChannelStartIndex = InOutChannelIdx;
         InOutChannelIdx += Node->Channels.Num();
+        NodeMap.Add(Node->Name, Node);
         for (auto Child : Node->Children) {
-          Visit(Child, InOutChannelIdx);
+          Visit(Child, InOutChannelIdx, NodeMap);
         }
       }
     };
 
     int32 ChIdx = 0;
     if (Data.RootNode.IsValid()) {
-      FChannelVisitor::Visit(Data.RootNode, ChIdx);
+      FChannelVisitor::Visit(Data.RootNode, ChIdx, NodeMap);
     }
   }
-
-  // Re-populate NodeMap after traversal
-  NodeMap.Empty();
-  {
-    TArray<TSharedPtr<FBVHNode>> Stack;
-    if (Data.RootNode.IsValid())
-      Stack.Add(Data.RootNode);
-    while (Stack.Num() > 0) {
-      TSharedPtr<FBVHNode> Node = Stack.Pop();
-      NodeMap.Add(Node->Name, Node);
-      for (auto Child : Node->Children)
-        Stack.Add(Child);
-    }
-  }
-
   for (const auto &Query : PayloadQueries) {
     FString PayloadKey = Query.PayloadKey.UniqueId;
     // Format: Filename + "|" + NodeName
