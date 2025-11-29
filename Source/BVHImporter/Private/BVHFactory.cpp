@@ -496,8 +496,6 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
   AnimSequence->GetController().SetFrameRate(FrameRate);
   AnimSequence->GetController().SetNumberOfFrames(FFrameNumber(Data.NumFrames));
 
-  AnimSequence->PostEditChange();
-
   // Populate Animation Data using AnimationBlueprintLibrary
   // This handles the data model initialization and curve creation more robustly
   TMap<FString, TSharedPtr<FBVHNode>> NodeNameMap;
@@ -604,8 +602,10 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
 
     AnimSequence->GetController().SetBoneTrackKeys(
         BoneName, PositionalKeys, RotationalKeys, ScalingKeys, true);
-    AnimSequence->GetController().NotifyPopulated();
   }
+
+  AnimSequence->GetController().NotifyPopulated();
+  AnimSequence->PostEditChange();
 
   // Notify Asset Registry
   FAssetRegistryModule::AssetCreated(AnimSequence);
