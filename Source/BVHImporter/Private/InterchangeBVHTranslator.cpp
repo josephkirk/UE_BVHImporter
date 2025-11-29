@@ -227,7 +227,13 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
       FVector3d ChanPos = FVector3d::ZeroVector;
 
       for (int32 i = 0; i < Node->Channels.Num(); ++i) {
-        double Val = FrameValues[Node->ChannelStartIndex + i];
+        int32 ChannelIndex = Node->ChannelStartIndex + i;
+        if (ChannelIndex >= FrameValues.Num()) {
+          // Optionally log an error here, e.g.:
+          // UE_LOG(LogTemp, Warning, TEXT("ChannelIndex %d out of bounds for FrameValues.Num() %d"), ChannelIndex, FrameValues.Num());
+          continue;
+        }
+        double Val = FrameValues[ChannelIndex];
         EBVHChannel Chan = Node->Channels[i];
 
         switch (Chan) {
