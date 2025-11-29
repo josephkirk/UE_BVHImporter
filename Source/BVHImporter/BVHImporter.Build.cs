@@ -43,7 +43,13 @@ public class BVHImporter : ModuleRules
 				"SkeletalMeshDescription",
 				"MeshUtilities",
 				"AssetRegistry",
-				"AnimationBlueprintLibrary"
+				"AnimationBlueprintLibrary",
+				"InterchangeCore",
+				"InterchangeEngine",
+				"InterchangeFactoryNodes",
+				"InterchangeImport",
+				"InterchangeCommonParser",
+				"InterchangeNodes"
 			}
 			);
 		
