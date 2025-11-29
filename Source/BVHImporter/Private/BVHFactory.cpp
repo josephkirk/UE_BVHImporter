@@ -479,10 +479,19 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
   //  Set Frame Rate and Length
   //  BVH FrameTime is usually seconds per frame.
   //  We need to convert this to FFrameRate (Numerator/Denominator).
-  double FrameRateVal =
-      1.0 / ((Data.FrameTime > 0) ? Data.FrameTime : 0.033333);
-  FFrameRate FrameRate(FMath::RoundToInt(FrameRateVal),
-                       1); // Simple approximation for now
+  // Calculate FrameRate with high precision to match BVH FrameTime exactly
+  // FrameTime is seconds per frame. FrameRate is frames per second (Numerator /
+  // Denominator). We want Denominator / Numerator = FrameTime. Let's fix
+  // Numerator to a large value to capture precision.
+  const int32 TargetNumerator = 100000000;
+  double TargetDenominatorVal =
+      (Data.FrameTime > 0 ? Data.FrameTime : 0.033333) * TargetNumerator;
+  int32 TargetDenominator = FMath::RoundToInt(TargetDenominatorVal);
+
+  if (TargetDenominator <= 0)
+    TargetDenominator = 1;
+
+  FFrameRate FrameRate(TargetNumerator, TargetDenominator);
 
   AnimSequence->GetController().SetFrameRate(FrameRate);
   AnimSequence->GetController().SetNumberOfFrames(FFrameNumber(Data.NumFrames));
