@@ -104,19 +104,83 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
          TEXT("BVHFactory: Parsing successful. RootNode: %s, Frames: %d"),
          *Data.RootNode->Name, Data.NumFrames);
 
-  // 1. Create Skeleton
-  UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating Skeleton..."));
-  FString SkeletonName = InName.ToString() + TEXT("_Skeleton");
-  FString SkeletonPackageName =
-      FPaths::Combine(FPaths::GetPath(InParent->GetPathName()), SkeletonName);
-  UPackage *SkeletonPackage = CreatePackage(*SkeletonPackageName);
-  USkeleton *Skeleton = NewObject<USkeleton>(
-      SkeletonPackage, FName(*SkeletonName),
-      Flags | RF_Public | RF_Standalone | RF_Transactional);
+  // Flatten nodes early for easier access
+  TArray<TSharedPtr<FBVHNode>> FlatNodes;
+  struct FNodeCollector {
+    static void Collect(TSharedPtr<FBVHNode> Node,
+                        TArray<TSharedPtr<FBVHNode>> &OutArray) {
+      if (!Node.IsValid())
+        return;
+      OutArray.Add(Node);
+      for (auto Child : Node->Children) {
+        Collect(Child, OutArray);
+      }
+    }
+  };
+  FNodeCollector::Collect(Data.RootNode, FlatNodes);
+  UE_LOG(LogTemp, Log, TEXT("BVHFactory: Flattened nodes. Count: %d"),
+         FlatNodes.Num());
 
+  USkeleton *Skeleton = nullptr;
+  USkeletalMesh *SkeletalMesh = nullptr;
+  TMap<FString, FName> BoneMap; // BVH Node Name -> UE Bone Name
+
+  // Check for existing Skeleton in the target folder
+  FAssetRegistryModule &AssetRegistryModule =
+      FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+  TArray<FAssetData> AssetData;
+
+  // Use parent path to search for existing assets in the same folder
+  FString TargetFolderPath = FPaths::GetPath(InParent->GetPathName());
+  UE_LOG(LogTemp, Log, TEXT("BVHFactory: Searching for Skeleton in path: %s"),
+         *TargetFolderPath);
+  AssetRegistryModule.Get().GetAssetsByPath(FName(*TargetFolderPath),
+                                            AssetData);
+  UE_LOG(LogTemp, Log, TEXT("BVHFactory: Found %d assets in path."),
+         AssetData.Num());
+
+  for (const FAssetData &Asset : AssetData) {
+    UE_LOG(LogTemp, Log, TEXT("BVHFactory: Checking asset: %s, Class: %s"),
+           *Asset.AssetName.ToString(), *Asset.AssetClassPath.ToString());
+
+    // Check for Skeleton class (handle both exact match and inheritance if
+    // needed, though exact match is usually fine for factories)
+    if (Asset.AssetClassPath.GetAssetName() ==
+        USkeleton::StaticClass()->GetFName()) {
+      Skeleton = Cast<USkeleton>(Asset.GetAsset());
+      if (Skeleton) {
+        UE_LOG(LogTemp, Log,
+               TEXT("BVHFactory: Found existing Skeleton: %s. Reusing it."),
+               *Skeleton->GetName());
+        break;
+      } else {
+        UE_LOG(
+            LogTemp, Warning,
+            TEXT("BVHFactory: Found Skeleton asset but failed to load it: %s"),
+            *Asset.AssetName.ToString());
+      }
+    }
+  }
+
+  if (Skeleton) {
+    // Reuse existing skeleton
+    // Build BoneMap assuming 1:1 mapping
+    for (const auto &Node : FlatNodes) {
+      BoneMap.Add(Node->Name, FName(*Node->Name));
+    }
+  } else {
+    // 1. Create Skeleton
+    UE_LOG(LogTemp, Log, TEXT("BVHFactory: Creating Skeleton..."));
+    FString SkeletonName = InName.ToString() + TEXT("_Skeleton");
+    FString SkeletonPackageName =
+        FPaths::Combine(FPaths::GetPath(InParent->GetPathName()), SkeletonName);
+    UPackage *SkeletonPackage = CreatePackage(*SkeletonPackageName);
+    Skeleton = NewObject<USkeleton>(SkeletonPackage, FName(*SkeletonName),
+                                    Flags | RF_Public | RF_Standalone |
+                                        RF_Transactional);
+  }
   // Build Reference Skeleton locally first
   FReferenceSkeleton LocalRefSkeleton;
-  TMap<FString, FName> BoneMap; // BVH Node Name -> UE Bone Name
   {
     FReferenceSkeletonModifier Modifier(LocalRefSkeleton, nullptr);
 
@@ -139,14 +203,15 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
   FString MeshPackageName =
       FPaths::Combine(FPaths::GetPath(InParent->GetPathName()), MeshName);
   UPackage *MeshPackage = CreatePackage(*MeshPackageName);
-  USkeletalMesh *SkeletalMesh = NewObject<USkeletalMesh>(
-      MeshPackage, FName(*MeshName),
-      Flags | RF_Public | RF_Standalone | RF_Transactional);
+  SkeletalMesh = NewObject<USkeletalMesh>(MeshPackage, FName(*MeshName),
+                                          Flags | RF_Public | RF_Standalone |
+                                              RF_Transactional);
   SkeletalMesh->SetSkeleton(Skeleton);
 
   SkeletalMesh->PreEditChange(nullptr);
 
-  // Create a dummy triangle to satisfy engine requirements for skeletal meshes
+  // Create a dummy triangle to satisfy engine requirements for skeletal
+  // meshes
   FSkeletalMeshImportData ImportData;
   ImportData.Points.Add(FVector3f(0, 0, 0));
   ImportData.Points.Add(FVector3f(0, 1, 0));
@@ -288,17 +353,12 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
   FBox BoundingBox(FloatBox);
   SkeletalMesh->SetImportedBounds(FBoxSphereBounds(BoundingBox));
 
-  // SetLODImportedDataVersions is deprecated for MeshDescription based
-  // workflows SkeletalMesh->SetLODImportedDataVersions(0,
-  // ESkeletalMeshGeoImportVersions::LatestVersion,
-  // ESkeletalMeshSkinningImportVersions::LatestVersion);
-
   // Commit to SkeletalMesh
   SkeletalMesh->CreateMeshDescription(0, MoveTemp(MeshDescription));
   SkeletalMesh->CommitMeshDescription(0);
 
-  // Explicitly build the LODModel using MeshUtilities to ensure RenderData can
-  // be generated
+  // Explicitly build the LODModel using MeshUtilities to ensure RenderData
+  // can be generated
   if (SkeletalMesh->GetImportedModel() &&
       SkeletalMesh->GetImportedModel()->LODModels.Num() > 0) {
     UE_LOG(LogTemp, Log,
@@ -310,7 +370,6 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
     FSkeletalMeshLODModel &LODModel =
         SkeletalMesh->GetImportedModel()->LODModels[0];
     IMeshUtilities::MeshBuildOptions BuildOptions;
-    // LODInfo.BuildSettings.bForceRebuild = true; // Not available
     BuildOptions.FillOptions(LODInfo.BuildSettings);
 
     // Convert ImportData types to BuildSkeletalMesh types
@@ -411,7 +470,6 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
   // Set Frame Rate and Length
   // BVH FrameTime is usually seconds per frame.
   // We need to convert this to FFrameRate (Numerator/Denominator).
-  // Using a large denominator to approximate the float frame time.
   double FrameRateVal =
       1.0 / ((Data.FrameTime > 0) ? Data.FrameTime : 0.033333);
   FFrameRate FrameRate(FMath::RoundToInt(FrameRateVal),
@@ -422,34 +480,16 @@ UObject *UBVHFactory::FactoryCreateFile(UClass *InClass, UObject *InParent,
 
   AnimSequence->PostEditChange();
 
-  TArray<TSharedPtr<FBVHNode>> FlatNodes;
-
-  struct FNodeCollector {
-    static void Collect(TSharedPtr<FBVHNode> Node,
-                        TArray<TSharedPtr<FBVHNode>> &OutArray) {
-      if (!Node.IsValid())
-        return;
-      OutArray.Add(Node);
-      for (auto Child : Node->Children) {
-        Collect(Child, OutArray);
-      }
-    }
-  };
-  FNodeCollector::Collect(Data.RootNode, FlatNodes);
-  UE_LOG(LogTemp, Log, TEXT("BVHFactory: Flattened nodes. Count: %d"),
-         FlatNodes.Num());
-
-  // Assign start indices and build Node Map
-  int32 CurrentChannelIdx = 0;
+  // Populate Animation Data using AnimationBlueprintLibrary
+  // This handles the data model initialization and curve creation more robustly
   TMap<FString, TSharedPtr<FBVHNode>> NodeNameMap;
+  int32 CurrentChannelIdx = 0;
   for (auto Node : FlatNodes) {
     Node->ChannelStartIndex = CurrentChannelIdx;
     CurrentChannelIdx += Node->Channels.Num();
     NodeNameMap.Add(Node->Name, Node);
   }
 
-  // Populate Animation Data using AnimationBlueprintLibrary
-  // This handles the data model initialization and curve creation more robustly
   for (const auto &Pair : BoneMap) {
     const FString &NodeName = Pair.Key;
     const FName &BoneName = Pair.Value;
