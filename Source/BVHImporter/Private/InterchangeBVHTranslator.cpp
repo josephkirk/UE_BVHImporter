@@ -70,7 +70,7 @@ bool UInterchangeBVHTranslator::Translate(
   UInterchangeAnimSequenceFactoryNode *AnimSequenceFactoryNode =
       NewObject<UInterchangeAnimSequenceFactoryNode>(&BaseNodeContainer);
   AnimSequenceFactoryNode->InitializeAnimSequenceNode(
-      AnimSequenceUid, TEXT("AnimSequence"), &BaseNodeContainer);
+      AnimSequenceUid, *FString::Printf(TEXT("%s_Anim"), *FPaths::GetBaseFilename(Filename)), &BaseNodeContainer);
   AnimSequenceFactoryNode->SetCustomSkeletonFactoryNodeUid(SkeletonUid);
   BaseNodeContainer.AddNode(AnimSequenceFactoryNode);
 
