@@ -23,3 +23,4 @@ I needed to bulk import some mocap data and didn't want to deal with retargeting
 - It converts the coordinates from BVH (Y-up) to UE (Z-up) automatically.
 - Works on my machine with Unreal Engine 5.6. Feel free to fork it if you need more features or create issue/feature request on project github.
 - Tested on Bandai Namco and 1000 Styles mocap datasets.
+- Assume 30 FPS for all anim imported.
