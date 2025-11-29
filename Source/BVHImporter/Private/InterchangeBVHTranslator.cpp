@@ -244,16 +244,16 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
           bHasPos = true;
           break;
         case EBVHChannel::Xrotation:
-          LocalRot =
-              LocalRot * FQuat(FVector(1, 0, 0), FMath::DegreesToRadians(Val));
+          LocalRot = LocalRot * FQuat(FVector::ForwardVector,
+                                      FMath::DegreesToRadians(Val));
           break;
         case EBVHChannel::Yrotation:
-          LocalRot =
-              LocalRot * FQuat(FVector(0, 1, 0), FMath::DegreesToRadians(Val));
+          LocalRot = LocalRot *
+                     FQuat(FVector::RightVector, FMath::DegreesToRadians(Val));
           break;
         case EBVHChannel::Zrotation:
           LocalRot =
-              LocalRot * FQuat(FVector(0, 0, 1), FMath::DegreesToRadians(Val));
+              LocalRot * FQuat(FVector::UpVector, FMath::DegreesToRadians(Val));
           break;
         default:
           break;
