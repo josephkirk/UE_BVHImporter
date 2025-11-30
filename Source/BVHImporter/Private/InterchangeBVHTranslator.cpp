@@ -38,7 +38,6 @@ TArray<FString> UInterchangeBVHTranslator::GetSupportedFormats() const {
   Formats.Add(TEXT("bvh;Biovision Hierarchy"));
   return Formats;
 }
-
 bool UInterchangeBVHTranslator::Translate(
     UInterchangeBaseNodeContainer &BaseNodeContainer) const {
   FString Filename = GetSourceData()->GetFilename();
@@ -49,12 +48,6 @@ bool UInterchangeBVHTranslator::Translate(
 
   BVHParser->LoadBVHFile(Filename, BaseNodeContainer);
   return true;
-}
-
-TOptional<UE::Interchange::FImportImage>
-UInterchangeBVHTranslator::GetTexturePayloadData(
-    const FString &PayloadKey, TOptional<FString> &AlternateTexturePath) const {
-  return TOptional<UE::Interchange::FImportImage>();
 }
 
 TOptional<UE::Interchange::FMeshPayloadData>

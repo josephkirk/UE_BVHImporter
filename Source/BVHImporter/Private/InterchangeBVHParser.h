@@ -7,7 +7,6 @@
 #include "Math/Transform.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 
-
 namespace UE {
 namespace Interchange {
 enum class EInterchangeBVHChannelEnum : uint8 {
@@ -43,7 +42,7 @@ public:
   FInterchangeBVHParser();
   ~FInterchangeBVHParser();
 
-  void LoadBVHFile(const FString &Filename,
+  bool LoadBVHFile(const FString &Filename,
                    UInterchangeBaseNodeContainer &BaseNodeContainer);
 
   bool Parse(const FString &Filename);

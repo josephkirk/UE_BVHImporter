@@ -15,7 +15,6 @@
 #include <fstream>
 #include <vector>
 
-
 namespace UE {
 namespace Interchange {
 
@@ -42,13 +41,17 @@ void FInterchangeBVHParser::Clear() {
 
 bool FInterchangeBVHParser::Parse(const FString &Filename) {
   Clear();
+  UE_LOG(LogTemp, Log, TEXT("Parsing BVH file: %s"), *Filename);
 
   if (!FPaths::FileExists(Filename)) {
+    UE_LOG(LogTemp, Error, TEXT("BVH file does not exist: %s"), *Filename);
     return false;
   }
 
   FString FileContent;
   if (!FFileHelper::LoadFileToString(FileContent, *Filename)) {
+    UE_LOG(LogTemp, Error, TEXT("Failed to load BVH file content: %s"),
+           *Filename);
     return false;
   }
 
@@ -73,6 +76,7 @@ bool FInterchangeBVHParser::Parse(const FString &Filename) {
 
   FString Token = GetNextToken();
   if (Token != TEXT("HIERARCHY")) {
+    UE_LOG(LogTemp, Error, TEXT("Invalid BVH file: Missing HIERARCHY header"));
     return false;
   }
 
@@ -151,6 +155,8 @@ bool FInterchangeBVHParser::Parse(const FString &Filename) {
           Channel->Type = EInterchangeBVHChannelEnum::Z_ROTATION;
         else {
           // Unknown channel type, clean up and return false
+          UE_LOG(LogTemp, Error, TEXT("Unknown channel type: %s"),
+                 *ChannelType);
           delete Channel;
           Clear();
           return false;
@@ -187,6 +193,9 @@ bool FInterchangeBVHParser::Parse(const FString &Filename) {
     MotionData.Add(FCString::Atod(*GetNextToken()));
   }
 
+  UE_LOG(LogTemp, Log,
+         TEXT("BVH Parsing successful. Joints: %d, Channels: %d, Frames: %d"),
+         Joints.Num(), Channels.Num(), NumFrames);
   return true;
 }
 
@@ -247,15 +256,17 @@ FInterchangeBVHParser::GetJointFromNodeUid(const FString &NodeUid) const {
   return nullptr;
 }
 
-void FInterchangeBVHParser::LoadBVHFile(
+bool FInterchangeBVHParser::LoadBVHFile(
     const FString &Filename, UInterchangeBaseNodeContainer &BaseNodeContainer) {
 
   if (!Parse(Filename)) {
-    return;
+    UE_LOG(LogTemp, Error, TEXT("LoadBVHFile: Parse failed"));
+    return false;
   }
 
   if (Joints.Num() == 0) {
-    return;
+    UE_LOG(LogTemp, Error, TEXT("LoadBVHFile: No joints found"));
+    return false;
   }
 
   FInterchangeBVHJoint *RootJoint = Joints[0];
@@ -407,6 +418,8 @@ void FInterchangeBVHParser::LoadBVHFile(
 
   AnimSequenceFactoryNode->SetAnimationPayloadKeysForSceneNodeUids(
       SceneNodeAnimationPayloadKeyUids, SceneNodeAnimationPayloadKeyTypes);
+
+  return true;
 }
 
 } // namespace Interchange

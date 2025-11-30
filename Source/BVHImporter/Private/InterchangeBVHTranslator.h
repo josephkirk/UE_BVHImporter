@@ -45,12 +45,6 @@ public:
                          &PayloadAttributes) const override;
   /** IInterchangeMeshPayloadInterface End */
 
-  /** IInterchangeTexturePayloadInterface Begin */
-  virtual TOptional<UE::Interchange::FImportImage> GetTexturePayloadData(
-      const FString &PayloadKey,
-      TOptional<FString> &AlternateTexturePath) const override;
-  /** IInterchangeTexturePayloadInterface End */
-
 private:
   mutable TUniquePtr<UE::Interchange::FInterchangeBVHParser> BVHParser;
 };
