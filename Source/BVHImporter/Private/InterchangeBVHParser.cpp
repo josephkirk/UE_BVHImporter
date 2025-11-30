@@ -55,9 +55,13 @@ bool FInterchangeBVHParser::Parse(const FString &Filename) {
     return false;
   }
 
-  // Simple tokenizer
+  // Normalize whitespace to spaces
+  FileContent.ReplaceInline(TEXT("\r"), TEXT(" "));
+  FileContent.ReplaceInline(TEXT("\n"), TEXT(" "));
+  FileContent.ReplaceInline(TEXT("\t"), TEXT(" "));
+
   TArray<FString> Tokens;
-  FileContent.ParseIntoArray(Tokens, TEXT(" \t\r\n"), true);
+  FileContent.ParseIntoArray(Tokens, TEXT(" "), true);
 
   int32 TokenIndex = 0;
   auto GetNextToken = [&]() -> FString {
@@ -74,15 +78,36 @@ bool FInterchangeBVHParser::Parse(const FString &Filename) {
     return FString();
   };
 
-  FString Token = GetNextToken();
-  if (Token != TEXT("HIERARCHY")) {
-    UE_LOG(LogTemp, Error, TEXT("Invalid BVH file: Missing HIERARCHY header"));
+  UE_LOG(LogTemp, Log, TEXT("Total tokens found: %d"), Tokens.Num());
+
+  int32 HierarchyIndex = -1;
+  for (int32 i = 0; i < Tokens.Num(); ++i) {
+    if (Tokens[i].Contains(TEXT("HIERARCHY"))) {
+      HierarchyIndex = i;
+      break;
+    }
+  }
+
+  if (HierarchyIndex == -1) {
+    if (Tokens.Num() > 0) {
+      UE_LOG(
+          LogTemp, Error,
+          TEXT("Invalid BVH file: Missing HIERARCHY header. First token: '%s'"),
+          *Tokens[0]);
+    } else {
+      UE_LOG(LogTemp, Error, TEXT("Invalid BVH file: No tokens found"));
+    }
     return false;
   }
+
+  UE_LOG(LogTemp, Log, TEXT("Found HIERARCHY at token index: %d"),
+         HierarchyIndex);
+  TokenIndex = HierarchyIndex + 1;
 
   TArray<FInterchangeBVHJoint *> JointStack;
   FInterchangeBVHJoint *CurrentJoint = nullptr;
   bool bIsSite = false;
+  FString Token;
 
   while (TokenIndex < Tokens.Num()) {
     Token = GetNextToken();
@@ -353,9 +378,18 @@ bool FInterchangeBVHParser::LoadBVHFile(
       AnimSequenceUid,
       *FString::Printf(TEXT("%s_Anim"), *FPaths::GetBaseFilename(Filename)),
       &BaseNodeContainer);
+
+  // Link to Skeleton Factory Node
   AnimSequenceFactoryNode->SetCustomSkeletonFactoryNodeUid(SkeletonUid);
+
+  // Link to Skeletal Mesh Factory Node (optional but good for dependency)
+  // AnimSequenceFactoryNode->SetCustomSkeletalMeshFactoryNodeUid(SkeletalMeshUid);
+  // // If available in API
+
   // Ensure AnimSequence runs after SkeletalMesh (which populates the Skeleton)
   AnimSequenceFactoryNode->AddTargetNodeUid(SkeletalMeshUid);
+  AnimSequenceFactoryNode->AddTargetNodeUid(SkeletonUid);
+
   BaseNodeContainer.AddNode(AnimSequenceFactoryNode);
 
   TMap<FString, FString> SceneNodeAnimationPayloadKeyUids;
