@@ -59,19 +59,22 @@ bool UInterchangeBVHTranslator::Translate(
   FString SkeletonUid = TEXT("Skeleton_") + FPaths::GetBaseFilename(Filename);
   UInterchangeSkeletonFactoryNode *SkeletonFactoryNode =
       NewObject<UInterchangeSkeletonFactoryNode>(&BaseNodeContainer);
-  FString SkeletonDisplayName = FPaths::GetBaseFilename(Filename) + TEXT("_Skeleton");
-  SkeletonFactoryNode->InitializeSkeletonNode(
-      SkeletonUid, SkeletonDisplayName, SkeletonDisplayName, &BaseNodeContainer);
+  FString SkeletonDisplayName =
+      FPaths::GetBaseFilename(Filename) + TEXT("_Skeleton");
+  SkeletonFactoryNode->InitializeSkeletonNode(SkeletonUid, SkeletonDisplayName,
+                                              SkeletonDisplayName,
+                                              &BaseNodeContainer);
   SkeletonFactoryNode->SetCustomRootJointUid(Data.RootNode->Name);
   BaseNodeContainer.AddNode(SkeletonFactoryNode);
-
   // Create AnimSequence Factory Node
   FString AnimSequenceUid =
       TEXT("AnimSequence_") + FPaths::GetBaseFilename(Filename);
   UInterchangeAnimSequenceFactoryNode *AnimSequenceFactoryNode =
       NewObject<UInterchangeAnimSequenceFactoryNode>(&BaseNodeContainer);
   AnimSequenceFactoryNode->InitializeAnimSequenceNode(
-      AnimSequenceUid, *FString::Printf(TEXT("%s_Anim"), *FPaths::GetBaseFilename(Filename)), &BaseNodeContainer);
+      AnimSequenceUid,
+      *FString::Printf(TEXT("%s_Anim"), *FPaths::GetBaseFilename(Filename)),
+      &BaseNodeContainer);
   AnimSequenceFactoryNode->SetCustomSkeletonFactoryNodeUid(SkeletonUid);
   BaseNodeContainer.AddNode(AnimSequenceFactoryNode);
 
@@ -86,11 +89,14 @@ bool UInterchangeBVHTranslator::Translate(
     TSharedPtr<FBVHNode> Node = NodesToProcess.Pop();
 
     // Create Scene Node
-    FString NodeUid = Node->Name;
+    // Use pointer address to ensure unique UID in case of duplicate names
+    FString NodeUid = FString::Printf(TEXT("%s_%p"), *Node->Name, Node.Get());
     UInterchangeSceneNode *SceneNode =
         NewObject<UInterchangeSceneNode>(&BaseNodeContainer);
     SceneNode->InitializeNode(NodeUid, Node->Name,
                               EInterchangeNodeContainerType::TranslatedScene);
+    SceneNode->AddSpecializedType(
+        UE::Interchange::FSceneNodeStaticData::GetJointSpecializeTypeString());
 
     // Set Transform (Local Offset)
     // BVH Offset is X, Y, Z. Convert to UE: X, -Z, Y
@@ -103,13 +109,18 @@ bool UInterchangeBVHTranslator::Translate(
 
     // Set Hierarchy
     if (Node->Parent.IsValid()) {
-      BaseNodeContainer.SetNodeParentUid(NodeUid, Node->Parent.Pin()->Name);
+      TSharedPtr<FBVHNode> ParentNode = Node->Parent.Pin();
+      FString ParentUid =
+          FString::Printf(TEXT("%s_%p"), *ParentNode->Name, ParentNode.Get());
+      BaseNodeContainer.SetNodeParentUid(NodeUid, ParentUid);
     }
 
     BaseNodeContainer.AddNode(SceneNode);
 
     // Add to Animation Payload Map
-    FString PayloadKey = Filename + TEXT("|") + Node->Name;
+    // Payload Key must also be unique or deterministic.
+    // Since we use the same cached data, we can use the same logic.
+    FString PayloadKey = Filename + TEXT("|") + NodeUid;
     SceneNodeAnimationPayloadKeyUids.Add(NodeUid, PayloadKey);
     SceneNodeAnimationPayloadKeyTypes.Add(
         NodeUid, (uint8)EInterchangeAnimationPayLoadType::BAKED);
@@ -124,6 +135,20 @@ bool UInterchangeBVHTranslator::Translate(
       SceneNodeAnimationPayloadKeyUids, SceneNodeAnimationPayloadKeyTypes);
 
   return true;
+}
+
+void VisitNodesRecursive(TSharedPtr<FBVHNode> Node, int32 &InOutChannelIdx,
+                         TMap<FString, TSharedPtr<FBVHNode>> &NodeMap) {
+  Node->ChannelStartIndex = InOutChannelIdx;
+  InOutChannelIdx += Node->Channels.Num();
+
+  // Reconstruct NodeUid
+  FString NodeUid = FString::Printf(TEXT("%s_%p"), *Node->Name, Node.Get());
+  NodeMap.Add(NodeUid, Node);
+
+  for (auto Child : Node->Children) {
+    VisitNodesRecursive(Child, InOutChannelIdx, NodeMap);
+  }
 }
 
 TArray<UE::Interchange::FAnimationPayloadData>
@@ -141,51 +166,41 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
 
   // Flatten nodes for easy lookup and assign channel indices in one traversal
   TMap<FString, TSharedPtr<FBVHNode>> NodeMap;
-  TArray<TSharedPtr<FBVHNode>> NodesToProcess;
-  if (Data.RootNode.IsValid()) {
-    NodesToProcess.Add(Data.RootNode);
-  }
 
   // Traverse hierarchy to set channel indices and populate NodeMap
   {
-    int32 ChannelIdx = 0;
-    // BVH channels are stored in the order of the hierarchy in the file.
-    // The parser builds the hierarchy.
-    // Visit nodes in the order they appear in the file to assign channel indices and populate NodeMap.
-    struct FChannelVisitor {
-      static void Visit(TSharedPtr<FBVHNode> Node, int32 &InOutChannelIdx, TMap<FString, TSharedPtr<FBVHNode>>& NodeMap) {
-        Node->ChannelStartIndex = InOutChannelIdx;
-        InOutChannelIdx += Node->Channels.Num();
-        NodeMap.Add(Node->Name, Node);
-        for (auto Child : Node->Children) {
-          Visit(Child, InOutChannelIdx, NodeMap);
-        }
-      }
-    };
-
     int32 ChIdx = 0;
     if (Data.RootNode.IsValid()) {
-      FChannelVisitor::Visit(Data.RootNode, ChIdx, NodeMap);
+      VisitNodesRecursive(Data.RootNode, ChIdx, NodeMap);
     }
   }
   for (const auto &Query : PayloadQueries) {
     FString PayloadKey = Query.PayloadKey.UniqueId;
-    // Format: Filename + "|" + NodeName
+    // Format: Filename + "|" + NodeUid
     // Using '|' as a delimiter to avoid ambiguity with underscores in filenames
     // or node names.
 
-    // Extract NodeName from PayloadKey using the delimiter.
-    FString NodeName;
+    // Extract NodeUid from PayloadKey using the delimiter.
+    FString NodeUid;
     int32 DelimIdx;
     if (PayloadKey.FindLastChar(TEXT('|'), DelimIdx)) {
-      NodeName = PayloadKey.Mid(DelimIdx + 1);
+      NodeUid = PayloadKey.Mid(DelimIdx + 1);
     }
 
-    if (NodeName.IsEmpty() || !NodeMap.Contains(NodeName)) {
+    if (NodeUid.IsEmpty()) {
       continue;
     }
 
-    TSharedPtr<FBVHNode> Node = NodeMap[NodeName];
+    // We need to find the node that corresponds to this NodeUid.
+    // Since NodeUid contains the pointer address, we can't just look up by
+    // name. We need to reconstruct the map of NodeUid -> Node. This is done
+    // below in the traversal.
+
+    if (!NodeMap.Contains(NodeUid)) {
+      continue;
+    }
+
+    TSharedPtr<FBVHNode> Node = NodeMap[NodeUid];
     UE::Interchange::FAnimationPayloadData PayloadData(Query.SceneNodeUniqueID,
                                                        Query.PayloadKey);
 
@@ -208,7 +223,8 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
         int32 ChannelIndex = Node->ChannelStartIndex + i;
         if (ChannelIndex >= FrameValues.Num()) {
           // Optionally log an error here, e.g.:
-          // UE_LOG(LogTemp, Warning, TEXT("ChannelIndex %d out of bounds for FrameValues.Num() %d"), ChannelIndex, FrameValues.Num());
+          // UE_LOG(LogTemp, Warning, TEXT("ChannelIndex %d out of bounds for
+          // FrameValues.Num() %d"), ChannelIndex, FrameValues.Num());
           continue;
         }
         double Val = FrameValues[ChannelIndex];
@@ -229,15 +245,18 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
           break;
         case EBVHChannel::Xrotation:
           // BVH X axis -> UE X axis
-          LocalRot = LocalRot * FQuat(FVector(1, 0, 0), FMath::DegreesToRadians(Val));
+          LocalRot =
+              LocalRot * FQuat(FVector(1, 0, 0), FMath::DegreesToRadians(Val));
           break;
         case EBVHChannel::Yrotation:
           // BVH Y axis -> UE Z axis
-          LocalRot = LocalRot * FQuat(FVector(0, 0, 1), FMath::DegreesToRadians(Val));
+          LocalRot =
+              LocalRot * FQuat(FVector(0, 0, 1), FMath::DegreesToRadians(Val));
           break;
         case EBVHChannel::Zrotation:
           // BVH Z axis -> UE -Y axis
-          LocalRot = LocalRot * FQuat(FVector(0, -1, 0), FMath::DegreesToRadians(Val));
+          LocalRot =
+              LocalRot * FQuat(FVector(0, -1, 0), FMath::DegreesToRadians(Val));
           break;
         default:
           break;
