@@ -49,7 +49,8 @@ public class BVHImporter : ModuleRules
 				"InterchangeFactoryNodes",
 				"InterchangeImport",
 				"InterchangeCommonParser",
-				"InterchangeNodes"
+				"InterchangeNodes",
+				"MeshConversion"
 			}
 			);
 		

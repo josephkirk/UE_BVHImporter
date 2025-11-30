@@ -3,18 +3,24 @@
 #pragma once
 
 #include "Animation/InterchangeAnimationPayloadInterface.h"
-#include "BVHParser.h"
+#include "BVHParser.h" // Keep for FBVHData definition if needed by GetBVHData
 #include "CoreMinimal.h"
+#include "InterchangeBVHParser.h"
 #include "InterchangeTranslatorBase.h"
+#include "Mesh/InterchangeMeshPayloadInterface.h"
 
 #include "InterchangeBVHTranslator.generated.h"
 
-UCLASS(BlueprintType, Experimental, MinimalAPI)
-class UInterchangeBVHTranslator : public UInterchangeTranslatorBase,
-                                  public IInterchangeAnimationPayloadInterface {
+UCLASS(BlueprintType, Experimental)
+class BVHIMPORTER_API UInterchangeBVHTranslator
+    : public UInterchangeTranslatorBase,
+      public IInterchangeAnimationPayloadInterface,
+      public IInterchangeMeshPayloadInterface {
   GENERATED_BODY()
 
 public:
+  UInterchangeBVHTranslator(); // Add constructor
+
   /** Begin UInterchangeTranslatorBase API*/
   virtual EInterchangeTranslatorType GetTranslatorType() const override;
   virtual EInterchangeTranslatorAssetType
@@ -30,9 +36,18 @@ public:
                               &PayloadQueries) const override;
   /** IInterchangeAnimationPayloadInterface End */
 
+  /** IInterchangeMeshPayloadInterface Begin */
+  virtual TOptional<UE::Interchange::FMeshPayloadData>
+  GetMeshPayloadData(const FInterchangeMeshPayLoadKey &PayLoadKey,
+                     const UE::Interchange::FAttributeStorage
+                         &PayloadAttributes) const override;
+  /** IInterchangeMeshPayloadInterface End */
+
 private:
   mutable TOptional<FBVHData> CachedBVHData;
   mutable FString CachedFilename;
 
   const FBVHData *GetBVHData(const FString &Filename) const;
+
+  TUniquePtr<UE::Interchange::FInterchangeBVHParser> BVHParser;
 };

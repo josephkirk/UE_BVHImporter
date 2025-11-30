@@ -1,15 +1,26 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
-
 #include "InterchangeBVHTranslator.h"
+#include "Animation/Skeleton.h"
 #include "BVHParser.h"
+#include "Engine/SkeletalMesh.h"
 #include "InterchangeAnimSequenceFactoryNode.h"
 #include "InterchangeCommonAnimationPayload.h"
+#include "InterchangeMeshNode.h"
 #include "InterchangeSceneNode.h"
+#include "InterchangeSkeletalMeshFactoryNode.h"
+#include "InterchangeSkeletalMeshLodDataNode.h"
 #include "InterchangeSkeletonFactoryNode.h"
+#include "Mesh/InterchangeMeshPayloadInterface.h"
+#include "MeshDescription.h"
+#include "MeshDescriptionBuilder.h"
 #include "Misc/Paths.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
+#include "StaticMeshAttributes.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(InterchangeBVHTranslator)
+
+UInterchangeBVHTranslator::UInterchangeBVHTranslator() {
+  BVHParser = MakeUnique<UE::Interchange::FInterchangeBVHParser>();
+}
 
 EInterchangeTranslatorType
 UInterchangeBVHTranslator::GetTranslatorType() const {
@@ -18,7 +29,8 @@ UInterchangeBVHTranslator::GetTranslatorType() const {
 
 EInterchangeTranslatorAssetType
 UInterchangeBVHTranslator::GetSupportedAssetTypes() const {
-  return EInterchangeTranslatorAssetType::Animations;
+  return EInterchangeTranslatorAssetType::Meshes |
+         EInterchangeTranslatorAssetType::Animations;
 }
 
 TArray<FString> UInterchangeBVHTranslator::GetSupportedFormats() const {
@@ -49,92 +61,12 @@ bool UInterchangeBVHTranslator::Translate(
     return false;
   }
 
-  const FBVHData *DataPtr = GetBVHData(Filename);
-  if (!DataPtr || !DataPtr->RootNode.IsValid()) {
-    return false;
-  }
-  const FBVHData &Data = *DataPtr;
-
-  // Create Skeleton Factory Node
-  FString SkeletonUid = TEXT("Skeleton_") + FPaths::GetBaseFilename(Filename);
-  UInterchangeSkeletonFactoryNode *SkeletonFactoryNode =
-      NewObject<UInterchangeSkeletonFactoryNode>(&BaseNodeContainer);
-  FString SkeletonDisplayName =
-      FPaths::GetBaseFilename(Filename) + TEXT("_Skeleton");
-  SkeletonFactoryNode->InitializeSkeletonNode(SkeletonUid, SkeletonDisplayName,
-                                              SkeletonDisplayName,
-                                              &BaseNodeContainer);
-  SkeletonFactoryNode->SetCustomRootJointUid(Data.RootNode->Name);
-  BaseNodeContainer.AddNode(SkeletonFactoryNode);
-  // Create AnimSequence Factory Node
-  FString AnimSequenceUid =
-      TEXT("AnimSequence_") + FPaths::GetBaseFilename(Filename);
-  UInterchangeAnimSequenceFactoryNode *AnimSequenceFactoryNode =
-      NewObject<UInterchangeAnimSequenceFactoryNode>(&BaseNodeContainer);
-  AnimSequenceFactoryNode->InitializeAnimSequenceNode(
-      AnimSequenceUid,
-      *FString::Printf(TEXT("%s_Anim"), *FPaths::GetBaseFilename(Filename)),
-      &BaseNodeContainer);
-  AnimSequenceFactoryNode->SetCustomSkeletonFactoryNodeUid(SkeletonUid);
-  BaseNodeContainer.AddNode(AnimSequenceFactoryNode);
-
-  // Process Hierarchy
-  TArray<TSharedPtr<FBVHNode>> NodesToProcess;
-  NodesToProcess.Add(Data.RootNode);
-
-  TMap<FString, FString> SceneNodeAnimationPayloadKeyUids;
-  TMap<FString, uint8> SceneNodeAnimationPayloadKeyTypes;
-
-  while (NodesToProcess.Num() > 0) {
-    TSharedPtr<FBVHNode> Node = NodesToProcess.Pop();
-
-    // Create Scene Node
-    // Use pointer address to ensure unique UID in case of duplicate names
-    FString NodeUid = FString::Printf(TEXT("%s_%p"), *Node->Name, Node.Get());
-    UInterchangeSceneNode *SceneNode =
-        NewObject<UInterchangeSceneNode>(&BaseNodeContainer);
-    SceneNode->InitializeNode(NodeUid, Node->Name,
-                              EInterchangeNodeContainerType::TranslatedScene);
-    SceneNode->AddSpecializedType(
-        UE::Interchange::FSceneNodeStaticData::GetJointSpecializeTypeString());
-
-    // Set Transform (Local Offset)
-    // BVH Offset is X, Y, Z. Convert to UE: X, -Z, Y
-    FTransform LocalTransform;
-    LocalTransform.SetLocation(
-        FVector(Node->Offset.X, -Node->Offset.Z, Node->Offset.Y));
-    LocalTransform.SetRotation(FQuat::Identity);
-    LocalTransform.SetScale3D(FVector::OneVector);
-    SceneNode->SetCustomLocalTransform(&BaseNodeContainer, LocalTransform);
-
-    // Set Hierarchy
-    if (Node->Parent.IsValid()) {
-      TSharedPtr<FBVHNode> ParentNode = Node->Parent.Pin();
-      FString ParentUid =
-          FString::Printf(TEXT("%s_%p"), *ParentNode->Name, ParentNode.Get());
-      BaseNodeContainer.SetNodeParentUid(NodeUid, ParentUid);
-    }
-
-    BaseNodeContainer.AddNode(SceneNode);
-
-    // Add to Animation Payload Map
-    // Payload Key must also be unique or deterministic.
-    // Since we use the same cached data, we can use the same logic.
-    FString PayloadKey = Filename + TEXT("|") + NodeUid;
-    SceneNodeAnimationPayloadKeyUids.Add(NodeUid, PayloadKey);
-    SceneNodeAnimationPayloadKeyTypes.Add(
-        NodeUid, (uint8)EInterchangeAnimationPayLoadType::BAKED);
-
-    // Add children
-    for (const auto &Child : Node->Children) {
-      NodesToProcess.Add(Child);
-    }
+  if (BVHParser.IsValid()) {
+    BVHParser->LoadBVHFile(Filename, BaseNodeContainer);
+    return true;
   }
 
-  AnimSequenceFactoryNode->SetAnimationPayloadKeysForSceneNodeUids(
-      SceneNodeAnimationPayloadKeyUids, SceneNodeAnimationPayloadKeyTypes);
-
-  return true;
+  return false;
 }
 
 void VisitNodesRecursive(TSharedPtr<FBVHNode> Node, int32 &InOutChannelIdx,
@@ -177,8 +109,8 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
   for (const auto &Query : PayloadQueries) {
     FString PayloadKey = Query.PayloadKey.UniqueId;
     // Format: Filename + "|" + NodeUid
-    // Using '|' as a delimiter to avoid ambiguity with underscores in filenames
-    // or node names.
+    // Using '|' as a delimiter to avoid ambiguity with underscores in
+    // filenames or node names.
 
     // Extract NodeUid from PayloadKey using the delimiter.
     FString NodeUid;
@@ -279,4 +211,44 @@ UInterchangeBVHTranslator::GetAnimationPayloadData(
   }
 
   return PayloadDatas;
+}
+
+TOptional<UE::Interchange::FMeshPayloadData>
+UInterchangeBVHTranslator::GetMeshPayloadData(
+    const FInterchangeMeshPayLoadKey &PayLoadKey,
+    const UE::Interchange::FAttributeStorage &PayloadAttributes) const {
+  // We only support one mesh payload, which is the dummy mesh for the
+  // skeleton The key should match what we set in the LodDataNode (which we
+  // haven't set yet, but we will) Actually, the factory might ask for the
+  // mesh payload using the scene node UID if we didn't set a specific payload
+  // key in the LodDataNode? Wait, in CreatePayloadTasks, it uses the
+  // LodDataNode to get the mesh payload. We need to set a payload key in the
+  // LodDataNode.
+
+  UE::Interchange::FMeshPayloadData MeshPayloadData;
+  MeshPayloadData.MeshDescription = FMeshDescription();
+  FStaticMeshAttributes Attributes(MeshPayloadData.MeshDescription);
+  Attributes.Register();
+
+  // Create a single dummy triangle so the mesh is valid
+  FMeshDescriptionBuilder Builder;
+  Builder.SetMeshDescription(&MeshPayloadData.MeshDescription);
+  Builder.EnablePolyGroups();
+  Builder.SetNumUVLayers(1);
+
+  TArray<FVertexID> VertexIDs;
+  VertexIDs.Add(Builder.AppendVertex(FVector(0, 0, 0)));
+  VertexIDs.Add(Builder.AppendVertex(FVector(10, 0, 0)));
+  VertexIDs.Add(Builder.AppendVertex(FVector(0, 10, 0)));
+
+  TArray<FVertexInstanceID> VertexInstanceIDs;
+  VertexInstanceIDs.Add(Builder.AppendInstance(VertexIDs[0]));
+  VertexInstanceIDs.Add(Builder.AppendInstance(VertexIDs[1]));
+  VertexInstanceIDs.Add(Builder.AppendInstance(VertexIDs[2]));
+
+  FPolygonGroupID PolygonGroupID = Builder.AppendPolygonGroup();
+  Builder.AppendTriangle(VertexInstanceIDs[0], VertexInstanceIDs[1],
+                         VertexInstanceIDs[2], PolygonGroupID);
+
+  return MeshPayloadData;
 }
