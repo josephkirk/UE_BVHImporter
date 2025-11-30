@@ -8,6 +8,7 @@
 #include "InterchangeBVHParser.h"
 #include "InterchangeTranslatorBase.h"
 #include "Mesh/InterchangeMeshPayloadInterface.h"
+#include "Texture/InterchangeTexturePayloadInterface.h"
 
 #include "InterchangeBVHTranslator.generated.h"
 
@@ -15,11 +16,12 @@ UCLASS(BlueprintType, Experimental)
 class BVHIMPORTER_API UInterchangeBVHTranslator
     : public UInterchangeTranslatorBase,
       public IInterchangeAnimationPayloadInterface,
-      public IInterchangeMeshPayloadInterface {
+      public IInterchangeMeshPayloadInterface,
+      public IInterchangeTexturePayloadInterface {
   GENERATED_BODY()
 
 public:
-  UInterchangeBVHTranslator(); // Add constructor
+  UInterchangeBVHTranslator();
 
   /** Begin UInterchangeTranslatorBase API*/
   virtual EInterchangeTranslatorType GetTranslatorType() const override;
@@ -43,11 +45,12 @@ public:
                          &PayloadAttributes) const override;
   /** IInterchangeMeshPayloadInterface End */
 
+  /** IInterchangeTexturePayloadInterface Begin */
+  virtual TOptional<UE::Interchange::FImportImage> GetTexturePayloadData(
+      const FString &PayloadKey,
+      TOptional<FString> &AlternateTexturePath) const override;
+  /** IInterchangeTexturePayloadInterface End */
+
 private:
-  mutable TOptional<FBVHData> CachedBVHData;
-  mutable FString CachedFilename;
-
-  const FBVHData *GetBVHData(const FString &Filename) const;
-
-  TUniquePtr<UE::Interchange::FInterchangeBVHParser> BVHParser;
+  mutable TUniquePtr<UE::Interchange::FInterchangeBVHParser> BVHParser;
 };
