@@ -383,7 +383,7 @@ bool FInterchangeBVHParser::LoadBVHFile(
       &BaseNodeContainer);
 
   UE_LOG(LogTemp, Log, TEXT("SkeletonUid: %s"), *SkeletonUid);
-  UE_LOG(LogTemp, Log, TEXT("SkeletalMeshUid: %s"), *SkeletalMeshUid);
+  // UE_LOG(LogTemp, Log, TEXT("SkeletalMeshUid: %s"), *SkeletalMeshUid);
   UE_LOG(LogTemp, Log, TEXT("AnimSequenceUid: %s"), *AnimSequenceUid);
   UE_LOG(LogTemp, Log, TEXT("ActualRootNodeUid: %s"), *ActualRootNodeUid);
 
@@ -401,7 +401,7 @@ bool FInterchangeBVHParser::LoadBVHFile(
   }
 
   // Ensure AnimSequence runs after SkeletalMesh (which populates the Skeleton)
-  AnimSequenceFactoryNode->AddTargetNodeUid(SkeletalMeshUid);
+  // AnimSequenceFactoryNode->AddTargetNodeUid(SkeletalMeshUid);
   AnimSequenceFactoryNode->AddTargetNodeUid(SkeletonUid);
 
   BaseNodeContainer.AddNode(AnimSequenceFactoryNode);
@@ -452,7 +452,16 @@ bool FInterchangeBVHParser::LoadBVHFile(
       }
       if (!ParentUid.IsEmpty()) {
         BaseNodeContainer.SetNodeParentUid(NodeUid, ParentUid);
+        UE_LOG(LogTemp, Log, TEXT("Hierarchy: %s -> Parent: %s"), *NodeUid,
+               *ParentUid);
+      } else {
+        UE_LOG(
+            LogTemp, Warning,
+            TEXT("Hierarchy: Node %s has parent joint but ParentUid is empty!"),
+            *NodeUid);
       }
+    } else {
+      UE_LOG(LogTemp, Log, TEXT("Hierarchy: %s is Root"), *NodeUid);
     }
 
     BaseNodeContainer.AddNode(SceneNode);

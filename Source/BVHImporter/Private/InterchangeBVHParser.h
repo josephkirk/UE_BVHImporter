@@ -52,6 +52,7 @@ public:
   FInterchangeBVHJoint *GetRootJoint() const {
     return Joints.Num() > 0 ? Joints[0] : nullptr;
   }
+  const TArray<FInterchangeBVHJoint *> &GetJoints() const { return Joints; }
 
 private:
   void Clear();
