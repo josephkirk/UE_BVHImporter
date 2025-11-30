@@ -76,7 +76,7 @@ UInterchangeBVHTranslator::GetMeshPayloadData(
 
   // Add triangles (simple box)
   TArray<FVertexInstanceID> VertexInstanceIDs;
-  VertexInstanceIDs.SetNum(24);
+  VertexInstanceIDs.SetNum(36);
 
   // Helper to add quad
   auto AddQuad = [&](int32 v0, int32 v1, int32 v2, int32 v3,

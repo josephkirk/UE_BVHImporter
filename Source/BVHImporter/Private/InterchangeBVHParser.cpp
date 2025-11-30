@@ -226,6 +226,9 @@ bool FInterchangeBVHParser::Parse(const FString &Filename) {
 
 FTransform FInterchangeBVHParser::GetTransform(int32 FrameIndex,
                                                const FString &NodeUid) {
+  if (FrameIndex == 0) {
+    UE_LOG(LogTemp, Log, TEXT("GetTransform: Frame 0, NodeUid: %s"), *NodeUid);
+  }
   const FInterchangeBVHJoint *Joint = GetJointFromNodeUid(NodeUid);
   if (!Joint || FrameIndex < 0 || FrameIndex >= NumFrames) {
     return FTransform::Identity;
@@ -379,12 +382,23 @@ bool FInterchangeBVHParser::LoadBVHFile(
       *FString::Printf(TEXT("%s_Anim"), *FPaths::GetBaseFilename(Filename)),
       &BaseNodeContainer);
 
-  // Link to Skeleton Factory Node
-  AnimSequenceFactoryNode->SetCustomSkeletonFactoryNodeUid(SkeletonUid);
+  UE_LOG(LogTemp, Log, TEXT("SkeletonUid: %s"), *SkeletonUid);
+  UE_LOG(LogTemp, Log, TEXT("SkeletalMeshUid: %s"), *SkeletalMeshUid);
+  UE_LOG(LogTemp, Log, TEXT("AnimSequenceUid: %s"), *AnimSequenceUid);
+  UE_LOG(LogTemp, Log, TEXT("ActualRootNodeUid: %s"), *ActualRootNodeUid);
 
-  // Link to Skeletal Mesh Factory Node (optional but good for dependency)
-  // AnimSequenceFactoryNode->SetCustomSkeletalMeshFactoryNodeUid(SkeletalMeshUid);
-  // // If available in API
+  // Link to Skeleton Factory Node
+  if (!AnimSequenceFactoryNode->SetCustomSkeletonFactoryNodeUid(SkeletonUid)) {
+    UE_LOG(LogTemp, Error,
+           TEXT("Failed to set CustomSkeletonFactoryNodeUid on "
+                "AnimSequenceFactoryNode"));
+  }
+
+  AnimSequenceFactoryNode->SetCustomImportBoneTracks(true);
+  if (FrameTime > 0.0) {
+    AnimSequenceFactoryNode->SetCustomImportBoneTracksSampleRate(1.0 /
+                                                                 FrameTime);
+  }
 
   // Ensure AnimSequence runs after SkeletalMesh (which populates the Skeleton)
   AnimSequenceFactoryNode->AddTargetNodeUid(SkeletalMeshUid);
@@ -453,6 +467,7 @@ bool FInterchangeBVHParser::LoadBVHFile(
   AnimSequenceFactoryNode->SetAnimationPayloadKeysForSceneNodeUids(
       SceneNodeAnimationPayloadKeyUids, SceneNodeAnimationPayloadKeyTypes);
 
+  UE_LOG(LogTemp, Log, TEXT("LoadBVHFile: Completed successfully"));
   return true;
 }
 
